@@ -117,12 +117,24 @@ def parse_search_response(payload: dict) -> list[ReportRef]:
 
 
 def extract_download_url(payload: dict) -> str | None:
-    """download 端点响应 → PDF 地址（候选键防御性扫描，均缺返回 None）。"""
+    """download 端点响应 → PDF 地址。
+
+    实测（2026-09-28 REST 直连）：URL 在 data 字段直接给字符串；
+    另兼容键名不定（pdfurl/url/fileurl/downloadurl 防御性扫描，
+    根层与 data 内层字典都扫），均缺返回 None。
+    """
     if isinstance(payload, dict):
-        for key in _DOWNLOAD_URL_KEYS:
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
+        data = payload.get("data")
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+        dicts: list[dict] = [payload]
+        if isinstance(data, dict):
+            dicts.append(data)
+        for cand in dicts:
+            for key in _DOWNLOAD_URL_KEYS:
+                value = cand.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
     return None
 
 

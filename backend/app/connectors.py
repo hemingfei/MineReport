@@ -117,6 +117,7 @@ def build_connector(connector_id: str) -> Connector:
     未注册的 id 抛 ConnectorError；已注册但凭据未配置由连接器构造器自判
     （fxbaogao：api_key 为空即拒）。
     """
+    _load_builtins()
     cls = _REGISTRY.get(connector_id)
     if cls is None:
         raise ConnectorError("unknown_connector", f"连接器未注册：{connector_id!r}")

@@ -74,6 +74,24 @@ def test_registry_and_build() -> None:
     assert e.value.error_code == "unknown_connector"
 
 
+def test_build_connector_triggers_builtin_load(monkeypatch) -> None:
+    """worker 冷进程的首个注册表触点是 build_connector（run_subscription），
+    此前无人调 available_connectors——查表前必须兜底装载。
+    （真冷导入在测试进程不可模拟：app.fxbaogao 已被缓存，@register 不重放，
+    故钉住"调 _load_builtins"这一契约本身，注册表用无凭据桩类。）"""
+    import app.connectors as connectors
+
+    class _Stub(connectors.Connector):
+        connector_id = "stub-conn"
+
+    called = []
+    monkeypatch.setattr(connectors, "_load_builtins", lambda: called.append(1))
+    monkeypatch.setattr(connectors, "_REGISTRY", {"stub-conn": _Stub})
+    conn = build_connector("stub-conn")
+    assert called, "build_connector 查表前未兜底装载内置连接器"
+    assert isinstance(conn, _Stub)
+
+
 def test_build_without_key_rejected(tweak_settings) -> None:
     tweak_settings(fxbaogao_api_key="")
     with pytest.raises(ConnectorError) as e:
@@ -127,6 +145,18 @@ def test_extract_download_url_defensive_keys() -> None:
     assert fx.extract_download_url({"downloadurl": "https://cdn.example.com/y.pdf"}) == "https://cdn.example.com/y.pdf"
     assert fx.extract_download_url({"other": 1}) is None
     assert fx.extract_download_url({"url": ""}) is None
+
+
+def test_extract_download_url_data_string_and_nested() -> None:
+    """实测响应形态：URL 在 data 字段直接给字符串（2026-09-28 REST 直连真跑抓出）。"""
+    assert (
+        fx.extract_download_url({"code": 0, "msg": "ok", "data": "https://dr.fxbaogao.com/r/a.pdf?auth_key=1"})
+        == "https://dr.fxbaogao.com/r/a.pdf?auth_key=1"
+    )
+    # data 内层字典同样防御扫描
+    assert fx.extract_download_url({"code": 0, "data": {"pdfurl": "/b.pdf"}}) == "/b.pdf"
+    # data 字符串优先于键扫描
+    assert fx.extract_download_url({"url": "/c.pdf", "data": "/d.pdf"}) == "/d.pdf"
 
 
 # ---------- discover（MockTransport） ----------
