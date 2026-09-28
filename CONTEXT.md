@@ -44,6 +44,10 @@ _Avoid_: 裸 /api 前缀、单数资源名（connector 形）
 LLM 对单篇研报 markdown 的结构化提取结果：总结、题材归属、标的列表、评级等。一篇研报对应一份当前分析，可随 prompt 迭代重跑。
 _Avoid_: 摘要、解读
 
+**当前正文 (Current Body)**:
+研报正文 markdown 的取值口径：最近转换完成的文件（converted_at 优先、id 破并列，多来源文件后到优先）。规则单点在 search.latest_converted_file_stmt——/markdown 端点、分析输入（analysis.latest_converted_file 薄包装）、搜索正文入索引（_latest_body 列投影派生）三种消费同源，改"最新"语义只改这一处。
+_Avoid_: 最新文件（按上传序的"最新上传"是另一语义，如下载端点取文件的方式）
+
 **投影 (Projection)**:
 分析结果的可查询关联表（题材关联 report_themes / 标的 analysis_targets / 署名 analysis_authors），行随分析版本链生成、携带 analysis_id。"当前版投影"指 analysis_id 等于研报当前分析指针的行——重跑换版后旧版投影不计入查询口径。
 _Avoid_: 中间表、关联表（泛称时）

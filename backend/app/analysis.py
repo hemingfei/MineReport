@@ -413,13 +413,9 @@ def _extract(
 
 def latest_converted_file(session: OrmSession, report_id: int) -> ReportFile | None:
     """分析输入文件的选择语义：最近转换完成者（多来源文件后到优先，与 /markdown 一致）。
-    search._latest_body 同语义（正文入索引口径）——改"最新"规则须两处同步。"""
-    return session.scalar(
-        select(ReportFile)
-        .where(ReportFile.report_id == report_id, ReportFile.converted_at.is_not(None))
-        .order_by(ReportFile.converted_at.desc(), ReportFile.id.desc())
-        .limit(1)
-    )
+    规则单点在 search.latest_converted_file_stmt（analysis→search 是 #18 挂点既定方向，
+    语义与正文入索引口径同源）。"""
+    return session.scalar(search.latest_converted_file_stmt(report_id).limit(1))
 
 
 def run_analysis(

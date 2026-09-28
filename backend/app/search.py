@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, literal_column, select, update
+from sqlalchemy import Select, func, literal_column, select, update
 from sqlalchemy.orm import Session as OrmSession
 
 from .models import Analysis, ReportFile, ResearchReport
@@ -37,13 +37,23 @@ def _tsv(segment, weight: str):
     )
 
 
-def _latest_body(report_id: int):
-    """正文取最近转换完成文件（converted_at 优先、id 破并列，与 latest_converted_file
-    同语义——改"最新"规则须两处同步）。"""
+def latest_converted_file_stmt(report_id: int) -> Select:
+    """“最近转换完成文件”选择规则单点：converted_at 优先、id 破并列（多来源文件后到优先）。
+    两种消费形态都从此处派生：analysis.latest_converted_file（实体投影——/markdown
+    与分析输入的口径，调用方各自 limit(1)）、_latest_body（正文列投影——入索引口径）。
+    改“最新”语义只改这里。"""
     return (
-        select(ReportFile.markdown_text)
+        select(ReportFile)
         .where(ReportFile.report_id == report_id, ReportFile.converted_at.is_not(None))
         .order_by(ReportFile.converted_at.desc(), ReportFile.id.desc())
+    )
+
+
+def _latest_body(report_id: int):
+    """正文取最近转换完成文件（latest_converted_file_stmt 的列投影派生）。"""
+    return (
+        latest_converted_file_stmt(report_id)
+        .with_only_columns(ReportFile.markdown_text)
         .limit(1)
         .scalar_subquery()
     )
