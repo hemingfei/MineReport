@@ -33,10 +33,12 @@ class Role:
 class TaskStatus:
     # spec 状态机字面：uploaded → converting → analyzing → done | failed。
     # uploaded 是一切任务的入队态（analyze 任务并非字面"上传"，指排队待领取）；
-    # converting/analyzing 同时充当 worker 租约在途标记，超过租约可重领。
+    # converting/analyzing/running 兼任 worker 租约在途标记，超过租约可重领
+    # （running 供不属转换/分析状态机的任务，如主数据/词表导入）。
     UPLOADED = "uploaded"
     CONVERTING = "converting"
     ANALYZING = "analyzing"
+    RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
 

@@ -17,7 +17,7 @@ export interface User {
   role: Role;
 }
 
-export type TaskStatus = "uploaded" | "converting" | "analyzing" | "done" | "failed";
+export type TaskStatus = "uploaded" | "converting" | "analyzing" | "running" | "done" | "failed";
 
 export interface Task {
   id: number;

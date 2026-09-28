@@ -3,8 +3,8 @@ import { isTerminal, TASK_STATUS_LABEL } from "./task";
 import type { TaskStatus } from "./api";
 
 describe("task 状态词表", () => {
-  it("五个状态都有中文标签", () => {
-    const statuses: TaskStatus[] = ["uploaded", "converting", "analyzing", "done", "failed"];
+  it("六个状态都有中文标签", () => {
+    const statuses: TaskStatus[] = ["uploaded", "converting", "analyzing", "running", "done", "failed"];
     for (const s of statuses) {
       expect(TASK_STATUS_LABEL[s]).toBeTruthy();
     }
@@ -16,5 +16,6 @@ describe("task 状态词表", () => {
     expect(isTerminal("uploaded")).toBe(false);
     expect(isTerminal("converting")).toBe(false);
     expect(isTerminal("analyzing")).toBe(false);
+    expect(isTerminal("running")).toBe(false);
   });
 });

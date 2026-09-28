@@ -93,6 +93,14 @@ def ingest_report_file(
     file_row.storage_key = f"reports/{report.id}/files/{file_row.id}/{filename}"
     (storage or get_storage()).put(file_row.storage_key, data)
 
-    task = enqueue(db, "convert", {"report_id": report.id, "report_file_id": file_row.id})
+    task = enqueue(
+        db,
+        "convert",
+        {
+            "report_id": report.id,
+            "report_file_id": file_row.id,
+            "triggered_by": user_id,
+        },
+    )
     search.refresh_search_vector(db, report.id)  # 建档即索引标题（正文/总结随转换/分析补）
     return report, file_row, task, merged

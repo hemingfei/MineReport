@@ -59,6 +59,25 @@ def test_claim_uses_registry_inflight_status(db_engine) -> None:
         assert claimed[kind] == worker.HANDLERS[kind].inflight_status
 
 
+def test_import_tasks_run_not_converting(db_engine) -> None:
+    """回归：import 类任务领取后在途状态是 running。
+
+    曾长期走 SQL case 的 else_ 分支误入 converting，前端按钮显示"导入转换中…"。
+    """
+    with session_scope() as s:
+        for kind in ("import_targets", "import_themes"):
+            s.add(Task(kind=kind, status=UPLOADED, payload={}))
+        s.commit()
+
+    claimed: dict[str, str] = {}
+    while (task := worker.claim_next_task()) is not None:
+        claimed[task.kind] = task.status
+    assert claimed == {
+        "import_targets": TaskStatus.RUNNING,
+        "import_themes": TaskStatus.RUNNING,
+    }
+
+
 def test_run_once_no_task(db_engine) -> None:
     assert worker.run_once() is None
 

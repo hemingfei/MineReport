@@ -99,7 +99,7 @@ def claim_next_task() -> Task | None:
             .values(
                 status=case(
                     *((Task.kind == kind, spec.inflight_status) for kind, spec in HANDLERS.items()),
-                    else_=TaskStatus.CONVERTING,
+                    else_=TaskStatus.RUNNING,
                 ),
                 attempts=Task.attempts + 1,
                 claimed_at=func.now(),
@@ -342,7 +342,7 @@ def handle_import_targets(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["import_targets"] = TaskSpec(handle_import_targets, TaskStatus.CONVERTING)
+HANDLERS["import_targets"] = TaskSpec(handle_import_targets, TaskStatus.RUNNING)
 
 
 # ---------- import_themes：题材种子导入（#17） ----------
@@ -363,7 +363,7 @@ def handle_import_themes(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["import_themes"] = TaskSpec(handle_import_themes, TaskStatus.CONVERTING)
+HANDLERS["import_themes"] = TaskSpec(handle_import_themes, TaskStatus.RUNNING)
 
 
 def start_subscription_scheduler() -> "BackgroundScheduler | None":

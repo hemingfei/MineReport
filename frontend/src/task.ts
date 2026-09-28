@@ -9,6 +9,7 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   uploaded: "已入队",
   converting: "转换中",
   analyzing: "分析中",
+  running: "处理中",
   done: "已完成",
   failed: "失败",
 };

@@ -72,7 +72,8 @@ def test_upload_rejects_unsupported_extension(api: TestClient, make_user, login)
 
 
 def test_upload_202_shape(api: TestClient, make_user, login) -> None:
-    cookies = login(make_user(Role.ANALYST))
+    user = make_user(Role.ANALYST)
+    cookies = login(user)
     r = _upload(api, cookies, title="安洁科技点评")
     assert r.status_code == 202, r.text
     body = r.json()
@@ -80,6 +81,7 @@ def test_upload_202_shape(api: TestClient, make_user, login) -> None:
     assert body["task_id"] and body["report_id"] and body["file_id"]
     task = api.get(f"/api/tasks/{body['task_id']}", cookies=cookies).json()
     assert task["status"] == "uploaded"  # 前端 3~5s 轮询起点
+    assert task["payload"]["triggered_by"] == user.id  # 审计：convert 与其余 kind 一致记触发者
 
 
 # ---------- 转换管道（真实夹具三形态） ----------
