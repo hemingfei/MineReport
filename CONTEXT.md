@@ -26,6 +26,12 @@ _Avoid_: 关注、收藏
 连接器条目在本库的投影，(connector_id, external_id) 唯一——同一篇外部报告无论被多少关键词/多少轮命中，只入库一次。
 _Avoid_: 外链、快照
 
+### 任务与管道
+
+**任务 (Task)**:
+API 与 worker 共享的异步队列载体（kind + payload + 状态机 uploaded→在途→done/failed）。kind 的处理器注册、入队口（enqueue）与领取后在途状态单点收敛在 worker 的 HANDLERS 注册表——新增任务类型只注册一项，不在入队点手拼 Task。
+_Avoid_: 作业、job
+
 ### 分析产物
 
 **分析 (Analysis)**:
