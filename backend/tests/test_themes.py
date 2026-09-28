@@ -75,9 +75,10 @@ def test_expand_query_terms_for_subscription() -> None:
 
 @pytest.fixture()
 def db_session(db_engine):
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    # 退出时 commit 是安全网：造数路径均已显式提交，无 teardown 丢弃语义
+    with session_scope() as s:
         yield s
 
 
@@ -273,9 +274,9 @@ def test_analysis_links_known_theme_and_queues_unknown(make_report, llm_env) -> 
     已落成的标的同步回填题材标的池（ThemeMembership source=analysis，spec 三来源）。
     """
     from app import analysis
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         _mk_target(s, "002635", "安洁科技")  # 瀑布贴表通过 → 会员回填有料
         keep = _mk_theme(s, "算力", synonyms=["AI算力"])
         s.commit()
@@ -287,13 +288,13 @@ def test_analysis_links_known_theme_and_queues_unknown(make_report, llm_env) -> 
     llm_env(make_llm([payload, payload]))  # 两版重跑
 
     for _ in range(2):  # v1 与 v2（reanalyze 语义）
-        with SessionLocal() as s:
+        with session_scope() as s:
             report = s.get(ResearchReport, report_id)
             file = analysis.latest_converted_file(s, report_id)
             analysis.run_analysis(s, report, file)
             s.commit()
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         pending = s.scalars(select(Theme).where(Theme.status == ThemeStatus.PENDING)).all()
         assert [t.name for t in pending] == ["液冷服务器"]  # 两版重跑只堆一条待审
         assert pending[0].source == ThemeSource.ANALYSIS
@@ -319,20 +320,20 @@ def test_analysis_links_known_theme_and_queues_unknown(make_report, llm_env) -> 
 def test_analysis_links_via_merged_synonym(make_report) -> None:
     """合并的治理红利：被并入的原名"AI算力"继续命中去向"算力"（含全角变体）。"""
     from app import analysis
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         _mk_theme(s, "算力", synonyms=["AI算力"])
         s.commit()
     report_id, _ = make_report(_MD)
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, report_id)
         file = analysis.latest_converted_file(s, report_id)
         analysis.run_analysis(s, report, file, llm=make_llm([_raw(
             [{"name": "ＡＩ算力", "reason": "r"}], [{"name": "李四"}],
         )]))
         s.commit()
-    with SessionLocal() as s:
+    with session_scope() as s:
         assert s.scalars(select(Theme).where(Theme.status == ThemeStatus.PENDING)).first() is None
         link = s.scalar(select(ReportTheme))
         keep = s.scalars(select(Theme).where(Theme.status == ThemeStatus.ACTIVE)).one()
@@ -345,21 +346,21 @@ def test_analysis_links_via_merged_synonym(make_report) -> None:
 def test_retired_theme_name_requeues_instead_of_unique_violation(make_report) -> None:
     """停用题材仍占 name_norm 唯一索引：同名再提取必须复活条目而非撞库炸分析。"""
     from app import analysis
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         dead = _mk_theme(s, "元宇宙", ThemeStatus.RETIRED)
         s.commit()
         dead_id = dead.id
     report_id, _ = make_report(_MD)
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, report_id)
         file = analysis.latest_converted_file(s, report_id)
         analysis.run_analysis(s, report, file, llm=make_llm([_raw(
             [{"name": "元宇宙", "reason": "r"}], [{"name": "x"}],
         )]))
         s.commit()
-    with SessionLocal() as s:
+    with session_scope() as s:
         theme = s.get(Theme, dead_id)
         assert theme.status == ThemeStatus.PENDING  # 复活重新进待审
         assert s.scalar(select(ReportTheme)).theme_id == dead_id
@@ -368,11 +369,11 @@ def test_retired_theme_name_requeues_instead_of_unique_violation(make_report) ->
 def test_merged_then_retired_chain_resurrects_root(make_report, make_user) -> None:
     """A 并入 B、B 又被停用：再提 A 的名字 → 复活链尾 B（A 的语义归宿）。"""
     from app import analysis
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.themes import merge_theme, retire_theme
 
     admin_id = make_user(Role.ADMIN).id
-    with SessionLocal() as s:
+    with session_scope() as s:
         a = _mk_theme(s, "AI算力")
         b = _mk_theme(s, "算力")
         merge_theme(s, a, b, admin_id)
@@ -380,14 +381,14 @@ def test_merged_then_retired_chain_resurrects_root(make_report, make_user) -> No
         s.commit()
         b_id = b.id
     report_id, _ = make_report(_MD)
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, report_id)
         file = analysis.latest_converted_file(s, report_id)
         analysis.run_analysis(s, report, file, llm=make_llm([_raw(
             [{"name": "AI算力", "reason": "r"}], [{"name": "x"}],
         )]))
         s.commit()
-    with SessionLocal() as s:
+    with session_scope() as s:
         assert s.get(Theme, b_id).status == ThemeStatus.PENDING
 
 
@@ -622,9 +623,9 @@ def _raw_coverage(authors: list[dict]) -> str:
 def test_author_search_and_coverage(api, login, make_user, llm_env, make_report) -> None:
     reader = make_user(Role.READER)
     from app import analysis
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         _mk_target(s, "600519", "贵州茅台")
         theme = _mk_theme(s, "白酒")
         s.commit()
@@ -635,7 +636,7 @@ def test_author_search_and_coverage(api, login, make_user, llm_env, make_report)
         _raw_coverage([{"name": "王明星", "cert": "S001"}, {"name": "同事甲"}]),
     ]))
     for rid in (r1, r2):
-        with SessionLocal() as s:
+        with session_scope() as s:
             report = s.get(ResearchReport, rid)
             file = analysis.latest_converted_file(s, rid)
             analysis.run_analysis(s, report, file)

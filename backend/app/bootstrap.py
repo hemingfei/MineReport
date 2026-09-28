@@ -10,9 +10,9 @@ import logging
 
 from sqlalchemy import select
 
+from . import db
 from .auth import hash_password
 from .config import Settings
-from .db import SessionLocal
 from .models import Role, User
 
 logger = logging.getLogger(__name__)
@@ -24,10 +24,10 @@ def ensure_bootstrap_admin() -> bool:
     if not cfg.bootstrap_admin_email or not cfg.bootstrap_admin_password:
         return False
 
-    with SessionLocal() as db:
-        if db.scalars(select(User.id).where(User.role == Role.ADMIN)).one_or_none() is not None:
+    with db.session_scope() as session:
+        if session.scalars(select(User.id).where(User.role == Role.ADMIN)).one_or_none() is not None:
             return False
-        db.add(
+        session.add(
             User(
                 email=cfg.bootstrap_admin_email,
                 password_hash=hash_password(cfg.bootstrap_admin_password),
@@ -35,7 +35,7 @@ def ensure_bootstrap_admin() -> bool:
                 role=Role.ADMIN,
             )
         )
-        db.commit()
+        session.commit()
     logger.info("bootstrap admin created: %s", cfg.bootstrap_admin_email)
     return True
 

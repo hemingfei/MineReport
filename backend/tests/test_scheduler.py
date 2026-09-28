@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app import scheduler
 from app.connectors import Connector, FetchedFile, ReportRef
+from app.db import session_scope
 from app.errors import ConnectorError
 from app.models import (
     ConnectorRun,
@@ -75,9 +76,9 @@ def _no_jitter(tweak_settings):
 
 
 @pytest.fixture()
-def make_theme(session_factory):
+def make_theme(db_engine):
     def _make(name="AI算力", synonyms=("算力",), status="active"):
-        with session_factory() as s:
+        with session_scope() as s:
             t = Theme(
                 name=name,
                 name_norm=normalize_theme_name(name),
@@ -99,11 +100,11 @@ def theme(make_theme):
 
 
 @pytest.fixture()
-def make_subscription(session_factory, make_user, theme):
+def make_subscription(db_engine, make_user, theme):
     def _make(*, auto_download=True, theme_id=None, keywords=None, orgs=None, enabled=True, interval_hours=6, cursor=None, next_run=None):
         owner = make_user("analyst")
         theme_id = theme_id or theme
-        with session_factory() as s:
+        with session_scope() as s:
             sub = Subscription(
                 theme_id=theme_id,
                 connector_id="fake",
@@ -127,28 +128,26 @@ def run(sub_id, connector=None, now=NOW):
     return scheduler.run_subscription(sub_id, connector=connector, now=now)
 
 
-def test_expand_queries_dedup_and_cap(session_factory) -> None:
-    with session_factory() as s:
-        theme = Theme(name="AI算力", name_norm="AI算力", status="active", source="manual",
-                      synonyms=["算力", "AI 算力", ""])  # "AI 算力" 归一后与名重合
-        queries = scheduler.expand_queries(theme, ["储能", "AI算力"])
+def test_expand_queries_dedup_and_cap() -> None:
+    theme = Theme(name="AI算力", name_norm="AI算力", status="active", source="manual",
+                  synonyms=["算力", "AI 算力", ""])  # "AI 算力" 归一后与名重合
+    queries = scheduler.expand_queries(theme, ["储能", "AI算力"])
     assert queries == ["AI算力", "算力", "储能"]
 
 
-def test_expand_queries_cap(session_factory) -> None:
-    with session_factory() as s:
-        theme = Theme(name="T", name_norm="T", status="active", source="manual",
-                      synonyms=[f"同义词{i}" for i in range(20)])
-        assert len(scheduler.expand_queries(theme, None)) == scheduler.MAX_QUERIES
+def test_expand_queries_cap() -> None:
+    theme = Theme(name="T", name_norm="T", status="active", source="manual",
+                  synonyms=[f"同义词{i}" for i in range(20)])
+    assert len(scheduler.expand_queries(theme, None)) == scheduler.MAX_QUERIES
 
 
-def test_run_ingests_and_external_ref_dedupes(make_subscription, session_factory) -> None:
+def test_run_ingests_and_external_ref_dedupes(make_subscription, db_engine) -> None:
     sub_id, owner = make_subscription()
     conn = FakeConnector(refs=[make_ref("r1"), make_ref("r2")])
 
     stats = run(sub_id, conn)
     assert stats["new"] == 2 and stats["downloaded"] == 2 and stats["ingested"] == 2
-    with session_factory() as s:
+    with session_scope() as s:
         refs = s.scalars(select(ExternalRef).order_by(ExternalRef.external_id)).all()
         assert [r.status for r in refs] == ["ingested", "ingested"]
         assert [r.report_id is not None for r in refs] == [True, True]
@@ -170,7 +169,7 @@ def test_run_ingests_and_external_ref_dedupes(make_subscription, session_factory
     # 第二轮同命中（两组查询词各一遍 → 4 次命中全 seen）：不 fetch 不建研报
     stats2 = run(sub_id, FakeConnector(refs=[make_ref("r1"), make_ref("r2")]))
     assert stats2["seen"] == 4 and stats2["new"] == 0 and stats2["downloaded"] == 0
-    with session_factory() as s:
+    with session_scope() as s:
         assert len(s.scalars(select(ResearchReport)).all()) == 2
         assert len(s.scalars(select(ConnectorRun).where(ConnectorRun.event == "run")).all()) == 2
 
@@ -183,12 +182,12 @@ def test_query_expansion_from_theme_synonyms(make_subscription) -> None:
     assert conn.discover_calls[0][2] == ("测试证券",)  # orgs 透传
 
 
-def test_composite_key_hit_skips_download(make_subscription, session_factory) -> None:
+def test_composite_key_hit_skips_download(make_subscription, db_engine) -> None:
     """组合键去重（ADR-0001）：库内已有同（标题归一,券商,日期）研报 → 只挂引用不下载。"""
     from app.conversion import normalize_title
 
     sub_id, owner = make_subscription()
-    with session_factory() as s:
+    with session_scope() as s:
         s.add(ResearchReport(
             title="AI算力产业前瞻", title_norm=normalize_title("AI算力产业前瞻"),
             broker="测试证券", publish_date=dt.date(2026, 10, 9), created_by=owner.id,
@@ -197,28 +196,28 @@ def test_composite_key_hit_skips_download(make_subscription, session_factory) ->
     conn = FakeConnector(refs=[make_ref("r1", title="AI算力产业前瞻")])
     stats = run(sub_id, conn)
     assert stats["duplicates"] == 1 and conn.fetch_calls == []
-    with session_factory() as s:
+    with session_scope() as s:
         ref = s.scalar(select(ExternalRef))
         assert ref.status == "duplicate" and ref.report_id is not None
 
 
-def test_auto_download_off_records_metadata_only(make_subscription, session_factory) -> None:
+def test_auto_download_off_records_metadata_only(make_subscription, db_engine) -> None:
     sub_id, _ = make_subscription(auto_download=False)
     conn = FakeConnector(refs=[make_ref("r1")])
     stats = run(sub_id, conn)
     assert stats["pending"] == 1 and conn.fetch_calls == []
-    with session_factory() as s:
+    with session_scope() as s:
         ref = s.scalar(select(ExternalRef))
         assert ref.status == "seen" and ref.report_id is None
         assert s.scalars(select(ResearchReport)).first() is None
 
 
-def test_per_ref_fetch_failure_does_not_kill_run(make_subscription, session_factory) -> None:
+def test_per_ref_fetch_failure_does_not_kill_run(make_subscription, db_engine) -> None:
     sub_id, _ = make_subscription()
     conn = FakeConnector(refs=[make_ref("r1"), make_ref("r2")], fail_fetch_ids={"r1"})
     stats = run(sub_id, conn)
     assert stats["fetch_failed"] == 1 and stats["ingested"] == 1
-    with session_factory() as s:
+    with session_scope() as s:
         statuses = {r.external_id: r.status for r in s.scalars(select(ExternalRef))}
         assert statuses == {"r1": "fetch_failed", "r2": "ingested"}
         failed = s.scalar(select(ExternalRef).where(ExternalRef.external_id == "r1"))
@@ -227,46 +226,46 @@ def test_per_ref_fetch_failure_does_not_kill_run(make_subscription, session_fact
         assert run_rows[0].ok  # 整轮仍记成功
 
 
-def test_backoff_retry_then_dead_letter(make_subscription, session_factory) -> None:
+def test_backoff_retry_then_dead_letter(make_subscription, db_engine) -> None:
     sub_id, _ = make_subscription()
     conn = FakeConnector(fail_discover=True)
 
     run(sub_id, conn, now=NOW)
-    with session_factory() as s:
+    with session_scope() as s:
         sub = s.get(Subscription, sub_id)
         assert sub.attempt == 1 and sub.next_run_at == NOW + dt.timedelta(seconds=60)
         assert s.scalars(select(ConnectorRun).where(ConnectorRun.event == "retry")).first() is not None
 
     run(sub_id, conn, now=NOW + dt.timedelta(minutes=1))
     run(sub_id, conn, now=NOW + dt.timedelta(minutes=6))
-    with session_factory() as s:
+    with session_scope() as s:
         sub = s.get(Subscription, sub_id)
         assert sub.attempt == 3 and sub.next_run_at == NOW + dt.timedelta(minutes=6) + dt.timedelta(seconds=1500)
 
     # 第 4 次失败：死信，attempt 归零，下一轮回正常 interval
     run(sub_id, conn, now=NOW + dt.timedelta(minutes=31))
-    with session_factory() as s:
+    with session_scope() as s:
         sub = s.get(Subscription, sub_id)
         assert sub.attempt == 0 and sub.consecutive_failures == 1
         assert sub.next_run_at == NOW + dt.timedelta(minutes=31) + dt.timedelta(hours=6)
         assert s.scalars(select(ConnectorRun).where(ConnectorRun.event == "dead_letter")).first() is not None
 
 
-def test_consecutive_dead_letters_alert_at_five(make_subscription, session_factory) -> None:
+def test_consecutive_dead_letters_alert_at_five(make_subscription, db_engine) -> None:
     sub_id, _ = make_subscription()
     conn = FakeConnector(fail_discover=True)
     t = NOW
     for _ in range(4 * 5):  # 每个死信 = 4 次失败（3 退避 + 1 落死信）
         run(sub_id, conn, now=t)
         t += dt.timedelta(hours=1)
-    with session_factory() as s:
+    with session_scope() as s:
         sub = s.get(Subscription, sub_id)
         assert sub.consecutive_failures == 5
         alerts = s.scalars(select(ConnectorRun).where(ConnectorRun.event == "alert")).all()
         assert len(alerts) == 1  # 恰在第 5 轮触发一次
 
 
-def test_success_resets_failure_streak(make_subscription, session_factory) -> None:
+def test_success_resets_failure_streak(make_subscription, db_engine) -> None:
     sub_id, _ = make_subscription()
     t = NOW
     fail = FakeConnector(fail_discover=True)
@@ -275,7 +274,7 @@ def test_success_resets_failure_streak(make_subscription, session_factory) -> No
         t += dt.timedelta(hours=1)
     ok = FakeConnector(refs=[make_ref("r9")])
     run(sub_id, ok, now=t)
-    with session_factory() as s:
+    with session_scope() as s:
         sub = s.get(Subscription, sub_id)
         assert sub.consecutive_failures == 0 and sub.attempt == 0 and sub.last_success_at == t
 
@@ -310,15 +309,15 @@ def test_tick_runs_only_due_enabled(make_subscription) -> None:
     assert count == 1 and ran == [due_id]
 
 
-def test_schedule_first_run_within_jitter(tweak_settings, session_factory) -> None:
+def test_schedule_first_run_within_jitter(tweak_settings, db_engine) -> None:
     tweak_settings(subscription_jitter_seconds=120)
-    with session_factory() as s:
+    with session_scope() as s:
         sub = Subscription(theme_id=1, connector_id="fake", created_by=1)
         scheduler.schedule_first_run(sub, now=NOW)
         assert NOW <= sub.next_run_at <= NOW + dt.timedelta(seconds=120)
 
 
-def test_worker_starts_subscription_scheduler(session_factory) -> None:
+def test_worker_starts_subscription_scheduler(db_engine) -> None:
     """worker 的 APSScheduler 挂载：tick 任务存在且可启停（执行语义由上面各用例覆盖）。"""
     from app import worker
 
@@ -328,12 +327,12 @@ def test_worker_starts_subscription_scheduler(session_factory) -> None:
     sched.shutdown(wait=False)
 
 
-def test_manual_download_ingests_and_idempotent(make_subscription, session_factory) -> None:
+def test_manual_download_ingests_and_idempotent(make_subscription, db_engine) -> None:
     sub_id, owner = make_subscription(auto_download=False)
     conn = FakeConnector(refs=[make_ref("r1")])
     run(sub_id, conn)
 
-    with session_factory() as s:
+    with session_scope() as s:
         ref = s.scalar(select(ExternalRef))
         assert ref.status == "seen"
         downloaded, report, task = scheduler.manual_download(s, ref, connector=FakeConnector(), user_id=owner.id)

@@ -132,6 +132,15 @@ def _ingest_fetched(
     return report, task
 
 
+def mark_fetch_failed(session: OrmSession, ref: ExternalRef, error: PipelineError) -> None:
+    """ref 拉取失败状态转移单点（调度轮与手动下载共用）：落 FETCH_FAILED +
+    统一错误格式化并提交。rollback 属调用方的事务编排——轮内新 ref 尚未提交
+    不可回滚，手动下载则须先回滚半程 flush 再重取后调用。"""
+    ref.status = RefStatus.FETCH_FAILED
+    ref.last_error = f"{error.error_code}: {error.message}"
+    session.commit()
+
+
 def _handle_ref(
     session: OrmSession, sub: Subscription, connector: Connector, ref: ReportRef, stats: dict, now: dt.datetime
 ) -> None:
@@ -183,8 +192,7 @@ def _handle_ref(
         else:
             stats["pending"] += 1  # auto_download 关：留待手动下载
     except PipelineError as e:
-        row.status = RefStatus.FETCH_FAILED
-        row.last_error = f"{e.error_code}: {e.message}"
+        mark_fetch_failed(session, row, e)
         stats["fetch_failed"] += 1
 
     if ref.published_at is not None and (sub.cursor_pubtime is None or ref.published_at > sub.cursor_pubtime):
@@ -234,7 +242,7 @@ def run_subscription(
     单轮失败不改抛：退避/死信语义在 _record_failure 落账（返回 stats 带 failed 标记）。
     """
     now = now or utcnow()
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         sub = session.get(Subscription, subscription_id)
         if sub is None:
             raise ValueError(f"subscription {subscription_id} 不存在")
@@ -280,7 +288,7 @@ def tick(*, now: dt.datetime | None = None) -> int:
     worker 的 APScheduler 定时调用；单订阅异常已内部消化，这里只兜底防级联。
     """
     now = now or utcnow()
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         due_ids = [
             sid for (sid,) in session.execute(
                 select(Subscription.id).where(

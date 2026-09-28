@@ -101,15 +101,10 @@ def test_database_url() -> str:
 
 @pytest.fixture(scope="session")
 def db_engine(test_database_url: str):
-    """把应用的 engine/SessionLocal 重绑到测试库（import 时绑定的是开发库）。"""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
+    """把应用切到测试库（app.db 导入时绑定的是开发库）。"""
     import app.db as db_mod
 
-    engine = create_engine(test_database_url)
-    db_mod.engine = engine
-    db_mod.SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+    engine = db_mod.use_database(test_database_url)
     yield engine
     engine.dispose()
 
@@ -118,10 +113,10 @@ def db_engine(test_database_url: str):
 def _clean_tables(db_engine):
     """每个测试后清空全部表：测试间零残留，断言不依赖执行顺序。"""
     yield
-    import app.db as db_mod
+    from app.db import session_scope
     from app.models import Base
 
-    with db_mod.SessionLocal() as s:
+    with session_scope() as s:
         for model in reversed(Base.metadata.sorted_tables):
             s.query(model).delete()
         s.commit()
@@ -180,16 +175,6 @@ def api(db_engine):
 
 
 @pytest.fixture()
-def session_factory(db_engine):
-    """调用时解析的 SessionLocal（#19）：db_engine 会重绑 app.db.SessionLocal，
-    测试文件顶层 `from app.db import SessionLocal` 按值导入会写进开发库——
-    一律用本 fixture（或函数内导入）。"""
-    import app.db as db_mod
-
-    return db_mod.SessionLocal
-
-
-@pytest.fixture()
 def make_user(db_engine):
     """直接入库造用户（鸡生蛋：首个 admin 无法经 API 产生）。密码随机生成，挂在返回对象上。"""
 
@@ -197,12 +182,12 @@ def make_user(db_engine):
         import uuid
 
         from app.auth import hash_password
-        from app.db import SessionLocal
+        from app.db import session_scope
         from app.models import User
 
         password = password or new_test_password()
         email = email or f"{role}-{uuid.uuid4().hex[:8]}@test.local"
-        with SessionLocal() as s:
+        with session_scope() as s:
             user = User(
                 email=email,
                 password_hash=hash_password(password),
@@ -268,12 +253,12 @@ def make_report(db_engine, make_user):
         import uuid
 
         from app.conversion import normalize_title
-        from app.db import SessionLocal
+        from app.db import session_scope
         from app.models import ReportFile, ResearchReport, Role
 
         owner = owner or make_user(Role.ANALYST)
         title = title or f"测试研报-{uuid.uuid4().hex[:8]}"
-        with SessionLocal() as s:
+        with session_scope() as s:
             report = ResearchReport(
                 title=title,
                 title_norm=normalize_title(title),

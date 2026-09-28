@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import select
 
 import app.scheduler as scheduler
+from app.db import session_scope
 from app.connectors import Connector, FetchedFile, ReportRef, register
 from app.errors import ConnectorError
 
@@ -56,11 +57,11 @@ def _fake_connector():
 
 
 @pytest.fixture()
-def active_theme(session_factory):
+def active_theme(db_engine):
     from app.models import Theme
     from app.themes import normalize_theme_name
 
-    with session_factory() as s:
+    with session_scope() as s:
         t = Theme(
             name="AI算力", name_norm=normalize_theme_name("AI算力"),
             status="active", source="manual", synonyms=["算力"],
@@ -71,10 +72,10 @@ def active_theme(session_factory):
 
 
 def make_ref_row(subscription_id: int, *, status: str = "seen", external_id: str = "ext-9") -> int:
-    from app.db import SessionLocal  # 调用时导入：conftest 重绑后指向测试库
+    from app.db import session_scope
     from app.models import ExternalRef
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         ref = ExternalRef(
             connector_id="apifake",
             external_id=external_id,
@@ -126,7 +127,7 @@ def test_create_and_list_own_subscriptions(api, make_user, login, active_theme) 
     assert api.get("/api/subscriptions", cookies=admin_cookie).json()["total"] == 2
 
 
-def test_create_validates_connector_and_theme(api, make_user, login, active_theme, session_factory) -> None:
+def test_create_validates_connector_and_theme(api, make_user, login, active_theme, db_engine) -> None:
     from app.models import Theme
     from app.themes import normalize_theme_name
 
@@ -137,7 +138,7 @@ def test_create_validates_connector_and_theme(api, make_user, login, active_them
     assert api.post(
         "/api/subscriptions", json={"theme_id": 999999, "connector_id": "apifake"}, cookies=cookie
     ).status_code == 404
-    with session_factory() as s:
+    with session_scope() as s:
         s.add(Theme(name="待审题材", name_norm=normalize_theme_name("待审题材"), status="pending", source="manual"))
         s.commit()
         pending_id = s.scalar(select(Theme.id).where(Theme.name == "待审题材"))
@@ -184,21 +185,21 @@ def test_delete_subscription(api, make_user, login, active_theme) -> None:
     assert api.get("/api/subscriptions", cookies=cookie).json()["total"] == 0
 
 
-def test_delete_subscription_with_history(api, make_user, login, active_theme, session_factory) -> None:
+def test_delete_subscription_with_history(api, make_user, login, active_theme, db_engine) -> None:
     """跑过一轮（有日志与发现记录）的订阅也能删：FK ondelete=SET NULL，历史保留可溯。"""
     cookie = login(make_user("analyst"))
     sub_id = api.post(
         "/api/subscriptions", json={"theme_id": active_theme, "connector_id": "apifake"}, cookies=cookie
     ).json()["id"]
     ref_id = make_ref_row(sub_id)
-    with session_factory() as s:
+    with session_scope() as s:
         from app.models import ConnectorRun
 
         s.add(ConnectorRun(connector_id="apifake", subscription_id=sub_id, event="run", ok=True, message="ok", stats={"downloaded": 1}))
         s.commit()
 
     assert api.delete("/api/subscriptions/%d" % sub_id, cookies=cookie).status_code == 204
-    with session_factory() as s:
+    with session_scope() as s:
         from app.models import ConnectorRun, ExternalRef
 
         run = s.scalars(select(ConnectorRun)).first()
@@ -229,7 +230,7 @@ def test_refs_listing_scoped_to_owner(api, make_user, login, active_theme) -> No
     assert api.get("/api/subscriptions/refs", cookies=admin).json()["total"] == 1
 
 
-def test_manual_download_flow(api, make_user, login, active_theme, session_factory) -> None:
+def test_manual_download_flow(api, make_user, login, active_theme, db_engine) -> None:
     analyst = make_user("analyst")
     cookie = login(analyst)
     sub_id = api.post(
@@ -260,7 +261,7 @@ def test_manual_download_flow(api, make_user, login, active_theme, session_facto
     assert api.get("/api/admin/connector-runs", cookies=cookie).status_code == 403
 
 
-def test_manual_download_failure_marks_ref(api, make_user, login, active_theme, session_factory, monkeypatch) -> None:
+def test_manual_download_failure_marks_ref(api, make_user, login, active_theme, db_engine, monkeypatch) -> None:
     cookie = login(make_user("analyst"))
     sub_id = api.post(
         "/api/subscriptions", json={"theme_id": active_theme, "connector_id": "apifake"}, cookies=cookie
@@ -278,19 +279,19 @@ def test_manual_download_failure_marks_ref(api, make_user, login, active_theme, 
     )
     r = api.post("/api/refs/%d/download" % ref_id, cookies=cookie)
     assert r.status_code == 502
-    with session_factory() as s:
+    with session_scope() as s:
         from app.models import ExternalRef
 
         ref = s.get(ExternalRef, ref_id)
         assert ref.status == "fetch_failed" and "apifake_down" in ref.last_error
 
 
-def test_fxbaogao_ref_url_derived(api, make_user, login, active_theme, session_factory) -> None:
+def test_fxbaogao_ref_url_derived(api, make_user, login, active_theme, db_engine) -> None:
     cookie = login(make_user("analyst"))
     sub_id = api.post(
         "/api/subscriptions", json={"theme_id": active_theme, "connector_id": "apifake"}, cookies=cookie
     ).json()["id"]
-    with session_factory() as s:
+    with session_scope() as s:
         from app.models import ExternalRef
 
         s.add(ExternalRef(

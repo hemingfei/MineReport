@@ -30,9 +30,10 @@ from test_analysis import make_llm
 
 @pytest.fixture()
 def db_session(db_engine):
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    # 退出时 commit 是安全网：造数路径均已显式提交，无 teardown 丢弃语义
+    with session_scope() as s:
         yield s
 
 

@@ -60,7 +60,7 @@ def claim_next_task() -> Task | None:
         .with_for_update(skip_locked=True)
         .scalar_subquery()
     )
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         row = session.execute(
             update(Task)
             .where(Task.id == candidate, eligible)
@@ -84,7 +84,7 @@ HANDLERS: dict[str, Callable[[int], None]] = {}
 
 
 def _mark_failed(task_id: int, error_code: str, message: str, stage: str | None) -> None:
-    with db.SessionLocal() as s:
+    with db.session_scope() as s:
         t = s.get(Task, task_id)
         if t is None:
             return
@@ -142,7 +142,7 @@ def _save_stage(task: Task, stages: set[str]) -> None:
 def handle_convert(task_id: int) -> None:
     storage = get_storage()
     s = get_settings()
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         task = session.get(Task, task_id)
         payload = dict(task.payload or {})
         file = session.get(ReportFile, payload["report_file_id"])
@@ -228,7 +228,7 @@ HANDLERS["convert"] = handle_convert
 def handle_analyze(task_id: int) -> None:
     """跳过转换，直接分析 payload 指定文件（缺省取最近转换完成者）。
     失败不留半版本：Analysis 行仅在提取归一全部成功后插入。"""
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         task = session.get(Task, task_id)
         payload = dict(task.payload or {})
         report = session.get(ResearchReport, payload["report_id"])
@@ -267,7 +267,7 @@ def handle_synthesize(task_id: int) -> None:
     题材在排队期间被合并/停用即失败（关联语义已变，重走 POST 重新选集；
     判据与 API 共用 synthesis.theme_unavailable_reason）；快照成员的可用性
     校验与证据边界记录见 synthesis.run_synthesis。"""
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         task = session.get(Task, task_id)
         payload = dict(task.payload or {})
         theme = session.get(Theme, payload["theme_id"])
@@ -306,7 +306,7 @@ HANDLERS["synthesize"] = handle_synthesize
 
 def handle_import_targets(task_id: int) -> None:
     """akshare 全量 + 申万 xls 全史 → 幂等 upsert；with_name_history 开启时慢速回填曾用名。"""
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         task = session.get(Task, task_id)
         payload = dict(task.payload or {})
         stocks, industry_rows = masterdata.fetch_all()
@@ -330,7 +330,7 @@ def handle_import_themes(task_id: int) -> None:
     依赖标的主数据已导入（成员 FK 指向 targets）；主数据未导时种子题材照建、成分为空，
     主数据导入后重跑即可补齐。
     """
-    with db.SessionLocal() as session:
+    with db.session_scope() as session:
         task = session.get(Task, task_id)
         em_seeds = themes.fetch_em_concept_seeds()
         sw_seeds = themes.fetch_sw_l2_seeds(session)

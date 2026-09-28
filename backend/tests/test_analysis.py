@@ -106,11 +106,11 @@ def test_fulltext_pipeline_lands_spec_schema(make_report) -> None:
     raw = fixture_json(DONGWU)
     raw["publish_date"] = "2025-01-15"  # LLM 回填日期 ≠ 首页日期：锚定必须赢
 
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, report_id)
         file = s.get(ReportFile, file_id)
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -135,13 +135,13 @@ def test_fulltext_pipeline_lands_spec_schema(make_report) -> None:
 
 
 def test_prompt_template_seeded_exactly_once(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)] * 2)
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         analysis.run_analysis(s, report, file, llm=llm)
@@ -152,13 +152,13 @@ def test_prompt_template_seeded_exactly_once(make_report) -> None:
 
 
 def test_version_chain_increments_and_pointer_moves(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)] * 2)
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         v1 = analysis.run_analysis(s, report, file, llm=llm)
@@ -174,14 +174,14 @@ def test_version_chain_increments_and_pointer_moves(make_report) -> None:
 
 def test_code_absent_in_text_marks_inferred(make_report) -> None:
     """spike 结论：LLM 凭世界知识补的码可能恰好对但不可信——正文没有即 inferred。"""
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     raw["targets"][0]["code"] = "600519"  # 不在正文中
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -192,14 +192,14 @@ def test_code_absent_in_text_marks_inferred(make_report) -> None:
 
 def test_publish_date_llm_fallback_is_marked_not_trusted(make_report) -> None:
     """正则锚不到时 LLM 日期可用，但必须带 llm 来源标记（不直接采信）。"""
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     raw["publish_date"] = "2024-12-31"
     make_report(MD_NO_DATE)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -209,14 +209,14 @@ def test_publish_date_llm_fallback_is_marked_not_trusted(make_report) -> None:
 
 
 def test_publish_date_missing_everywhere_is_null(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     raw["publish_date"] = None
     make_report(MD_NO_DATE)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -237,7 +237,7 @@ def test_anchor_rejects_chart_axis_date_row() -> None:
 
 def test_enum_drift_normalized_to_spec_vocab(make_report) -> None:
     """spike 结论：LLM 偶尔回吐训练词（stance=增持 等），归一到 spec 终版枚举。"""
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = {
@@ -258,7 +258,7 @@ def test_enum_drift_normalized_to_spec_vocab(make_report) -> None:
     }
     make_report(MD_NO_DATE)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -279,7 +279,7 @@ def test_enum_drift_normalized_to_spec_vocab(make_report) -> None:
 
 def test_chunk_fallback_for_overlong_documents(make_report) -> None:
     from app.config import get_settings
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     s_cfg = get_settings()
@@ -293,7 +293,7 @@ def test_chunk_fallback_for_overlong_documents(make_report) -> None:
         for i in range(3)
     ]
     llm = make_llm(partials + [json.dumps(merged, ensure_ascii=False)])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -309,14 +309,14 @@ def test_chunk_fallback_for_overlong_documents(make_report) -> None:
 # ---------- LLM 失败路径 ----------
 
 def test_invalid_json_recovers_from_prose_wrapping(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     raw = fixture_json(DONGWU)
     wrapped = "好的，以下是提取结果：\n" + json.dumps(raw, ensure_ascii=False) + "\n以上。"
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([wrapped])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         a = analysis.run_analysis(s, report, file, llm=llm)
@@ -325,12 +325,12 @@ def test_invalid_json_recovers_from_prose_wrapping(make_report) -> None:
 
 
 def test_garbage_response_raises_stable_error_code(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     make_report(MD_WITH_ANCHORS)
     llm = make_llm(["完全不是 JSON 的输出"])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         with pytest.raises(AnalysisError) as e:
@@ -339,12 +339,12 @@ def test_garbage_response_raises_stable_error_code(make_report) -> None:
 
 
 def test_http_error_raises_stable_error_code(make_report) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([500])
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.scalars(select(ResearchReport)).one()
         file = s.scalars(select(ReportFile)).one()
         with pytest.raises(AnalysisError) as e:
@@ -443,10 +443,10 @@ def test_analysis_failure_keeps_conversion_and_retry_succeeds(api, make_user, lo
 
 
 def test_stale_analyzing_task_is_reclaimed(db_engine) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
 
     stale = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
-    with SessionLocal() as s:
+    with session_scope() as s:
         s.add(Task(kind="analyze", status=TaskStatus.ANALYZING, payload={"report_id": 1}, claimed_at=stale))
         s.commit()
 
@@ -457,9 +457,9 @@ def test_stale_analyzing_task_is_reclaimed(db_engine) -> None:
 
 
 def test_fresh_analyzing_task_not_reclaimed(db_engine) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         s.add(Task(
             kind="analyze", status=TaskStatus.ANALYZING, payload={"report_id": 1},
             claimed_at=dt.datetime.now(dt.timezone.utc),

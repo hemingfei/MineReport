@@ -289,9 +289,7 @@ def download_ref(
         db.rollback()
         ref = db.get(ExternalRef, ref_id)
         if ref is not None:
-            ref.status = scheduler.RefStatus.FETCH_FAILED
-            ref.last_error = f"{e.error_code}: {e.message}"
-            db.commit()
+            scheduler.mark_fetch_failed(db, ref, e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"下载失败（{e.error_code}）：{e.message}",

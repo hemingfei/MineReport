@@ -170,7 +170,7 @@ def _industry_rows() -> list:
 
 
 def test_import_is_idempotent_and_joins_industry_names(db_engine) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.masterdata import StockRow, import_master_data, load_sw2021_names
 
     names = load_sw2021_names()
@@ -183,7 +183,7 @@ def test_import_is_idempotent_and_joins_industry_names(db_engine) -> None:
         StockRow("302132", "成飞"),  # 创业板新段：交易所推导 SZ
         StockRow("2635", "脏码跳过"),
     ]
-    with SessionLocal() as s:
+    with session_scope() as s:
         stats1 = import_master_data(s, stocks, _industry_rows())
         s.commit()
         assert stats1["industry_history_added"] == 5  # 重复原始行只落一次
@@ -206,11 +206,11 @@ def test_import_is_idempotent_and_joins_industry_names(db_engine) -> None:
 
 
 def test_import_covers_delisted_and_merges_historical_names(db_engine) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.masterdata import IndustryRow, StockRow, import_master_data
 
     # xls 里的退市股不在 stocks：也要建行（研报是历史文档，旧代码要能命中）
-    with SessionLocal() as s:
+    with session_scope() as s:
         stats = import_master_data(
             s,
             [StockRow("000503", "国新健康")],
@@ -233,9 +233,9 @@ def test_import_covers_delisted_and_merges_historical_names(db_engine) -> None:
 
 @pytest.fixture()
 def seed_master_rows(db_engine) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         s.add_all([
             _t("600519", "贵州茅台"),
             _t("002635", "安洁科技", l1="电子"),
@@ -289,10 +289,10 @@ RESULT_MIXED = {
 
 
 def test_link_targets_waterfall_outcomes(seed_master_rows, db_engine, make_user) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.targets import link_analysis_targets
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         report, analysis = _make_analysis(s, make_user, RESULT_MIXED)
         links = link_analysis_targets(s, report, analysis)
         s.commit()
@@ -316,10 +316,10 @@ def test_link_targets_waterfall_outcomes(seed_master_rows, db_engine, make_user)
 
 
 def test_confirm_then_reanalyze_reuses_manual_decision(seed_master_rows, db_engine, make_user) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.targets import link_analysis_targets, resolve_match
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         report, v1 = _make_analysis(s, make_user, RESULT_MIXED)
         links = link_analysis_targets(s, report, v1)
         s.commit()
@@ -349,10 +349,10 @@ def test_confirm_then_reanalyze_reuses_manual_decision(seed_master_rows, db_engi
 
 
 def test_new_version_supersedes_stale_pending(seed_master_rows, db_engine, make_user) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.targets import link_analysis_targets
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         report, v1 = _make_analysis(s, make_user, RESULT_MIXED)
         link_analysis_targets(s, report, v1)
         s.commit()
@@ -376,10 +376,10 @@ def test_new_version_supersedes_stale_pending(seed_master_rows, db_engine, make_
 
 
 def test_dismissed_decision_also_reused(seed_master_rows, db_engine, make_user) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.targets import link_analysis_targets, resolve_match
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         report, v1 = _make_analysis(s, make_user, RESULT_MIXED)
         links = link_analysis_targets(s, report, v1)
         s.commit()
@@ -530,7 +530,7 @@ def test_report_targets_empty_when_no_analysis(api, make_user, login, make_repor
 def test_admin_import_task_runs_via_worker(api, make_user, login, monkeypatch, db_engine) -> None:
     """admin 触发 → 202 → worker 领取 import_targets → 幂等导入落库（fetch mock，不碰网络）。"""
     from app import worker
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.masterdata import IndustryRow, StockRow
     from app import masterdata
 
@@ -555,6 +555,6 @@ def test_admin_import_task_runs_via_worker(api, make_user, login, monkeypatch, d
     assert task["result"]["targets_total"] == 2
     assert task["result"]["industry_history_added"] == 1
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         row = s.get(Target, "600519")
         assert (row.name, row.sw_l3_name) == ("贵州茅台", "白酒Ⅲ")  # 快照 + 静态码表名称

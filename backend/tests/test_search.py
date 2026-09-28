@@ -16,9 +16,9 @@ from test_analysis import make_llm
 
 def _refresh(report_id: int) -> None:
     from app import search
-    from app.db import SessionLocal
+    from app.db import session_scope
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         search.refresh_search_vector(s, report_id)
         s.commit()
 
@@ -48,11 +48,11 @@ def test_search_title_hit(api: TestClient, login, make_report, make_user) -> Non
 def test_search_summary_hit_via_analysis_pointer(api: TestClient, login, make_user, make_report) -> None:
     """总结源：当前分析版本的 result.summary 入索引。"""
     from app import search
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import Analysis, ResearchReport
 
     rid, fid = make_report("公司经营稳健，盈利能力改善。", title="某公司年报点评")
-    with SessionLocal() as s:
+    with session_scope() as s:
         a = Analysis(
             report_id=rid,
             report_file_id=fid,
@@ -110,13 +110,13 @@ def test_search_blank_q_returns_all(api: TestClient, login, make_user, make_repo
 
 def test_search_indexes_only_converted_files(api: TestClient, login, make_user, make_report) -> None:
     """正文只认最近"转换完成"的文件：未转换（converted_at NULL）的 markdown 不入索引。"""
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile
 
     import datetime as dt
 
     rid, fid = make_report(None)
-    with SessionLocal() as s:
+    with session_scope() as s:
         f = s.get(ReportFile, fid)
         f.markdown_text = "草稿阶段的算力正文，尚未转换完成。"
         from app import search
@@ -126,7 +126,7 @@ def test_search_indexes_only_converted_files(api: TestClient, login, make_user, 
     cookies = login(make_user("reader"))
     assert api.get("/api/reports", params={"q": "草稿"}, cookies=cookies).json()["total"] == 0
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         f = s.get(ReportFile, fid)
         f.converted_at = dt.datetime.now(dt.timezone.utc)
         from app import search
@@ -138,7 +138,7 @@ def test_search_indexes_only_converted_files(api: TestClient, login, make_user, 
 
 def test_search_follows_current_analysis_version(api: TestClient, login, make_user, make_report, llm_env) -> None:
     """run_analysis 挂点：总结随版本链头指针更新——旧版总结词退出、新版进入。"""
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import ReportFile, ResearchReport
     from app import analysis
 
@@ -148,14 +148,14 @@ def test_search_follows_current_analysis_version(api: TestClient, login, make_us
         json.dumps({"summary": "关注液冷散热渗透率提升。"}, ensure_ascii=False),
     ]))
     cookies = login(make_user("reader"))
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, rid)
         file = s.get(ReportFile, fid)
         analysis.run_analysis(s, report, file)
         s.commit()
     assert _ids(api.get("/api/reports", params={"q": "固态电池"}, cookies=cookies).json()) == {rid}
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         report = s.get(ResearchReport, rid)
         file = s.get(ReportFile, fid)
         analysis.run_analysis(s, report, file)

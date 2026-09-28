@@ -116,12 +116,12 @@ def test_register_unknown_token(api: TestClient) -> None:
 
 
 def test_register_expired_invitation(api: TestClient, make_user, login) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
 
     admin_cookies = login(make_user(Role.ADMIN))
     token = _invite(api, admin_cookies)
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         inv = s.query(Invitation).filter(Invitation.token == token).one()
         inv.expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
         s.commit()
@@ -203,13 +203,13 @@ def test_login_failures(api: TestClient, make_user) -> None:
 # ---------- 会话过期 ----------
 
 def test_expired_session_rejected(api: TestClient, make_user, login) -> None:
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import UserSession
 
     user = make_user(Role.READER)
     cookies = login(user)
 
-    with SessionLocal() as s:
+    with session_scope() as s:
         row = s.query(UserSession).one()
         row.expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
         s.commit()
@@ -224,7 +224,7 @@ def test_expired_session_rejected(api: TestClient, make_user, login) -> None:
 
 def test_bootstrap_admin_idempotent(db_engine, monkeypatch) -> None:
     from app import bootstrap
-    from app.db import SessionLocal
+    from app.db import session_scope
     from app.models import User
 
     initial_pw = new_test_password()
@@ -232,7 +232,7 @@ def test_bootstrap_admin_idempotent(db_engine, monkeypatch) -> None:
     monkeypatch.setenv("BOOTSTRAP_ADMIN_PASSWORD", initial_pw)
 
     assert bootstrap.ensure_bootstrap_admin() is True
-    with SessionLocal() as s:
+    with session_scope() as s:
         admin = s.query(User).filter(User.role == Role.ADMIN).one()
         assert admin.email == "root@minereport.local"
         assert verify_password(initial_pw, admin.password_hash)
@@ -240,7 +240,7 @@ def test_bootstrap_admin_idempotent(db_engine, monkeypatch) -> None:
     # 已有 admin 后再跑：跳过，不覆盖既有密码
     monkeypatch.setenv("BOOTSTRAP_ADMIN_PASSWORD", new_test_password())
     assert bootstrap.ensure_bootstrap_admin() is False
-    with SessionLocal() as s:
+    with session_scope() as s:
         admin = s.query(User).filter(User.role == Role.ADMIN).one()
         assert verify_password(initial_pw, admin.password_hash)
 

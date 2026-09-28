@@ -17,17 +17,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select  # noqa: E402
 
-from app.db import SessionLocal  # noqa: E402
+from app.db import session_scope  # noqa: E402
 from app.models import ResearchReport  # noqa: E402
 from app.search import refresh_search_vector  # noqa: E402
 
 
 def main() -> None:
-    with SessionLocal() as session:
+    with session_scope() as session:
         ids = session.scalars(select(ResearchReport.id).order_by(ResearchReport.id)).all()
         for rid in ids:
             refresh_search_vector(session, rid)
-        session.commit()
     print(f"backfilled search_vector for {len(ids)} reports")
 
 

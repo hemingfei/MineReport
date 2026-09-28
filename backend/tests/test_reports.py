@@ -254,10 +254,10 @@ def test_restore_window_expired(api: TestClient, make_user, login) -> None:
     rid = body["report_id"]
     assert api.delete(f"/api/reports/{rid}", cookies=owner).status_code == 204
 
-    import app.db as db_mod
+    from app.db import session_scope
     from app.models import ResearchReport
 
-    with db_mod.SessionLocal() as s:
+    with session_scope() as s:
         row = s.get(ResearchReport, rid)
         row.deleted_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=31)
         s.commit()
