@@ -101,6 +101,49 @@ def _clean_tables(db_engine):
         s.commit()
 
 
+@pytest.fixture(autouse=True)
+def _tmp_storage(tmp_path):
+    """每个测试用独立的 tmp 存储根：上传落盘与 worker 产物互不串扰，也不污染工作区。"""
+    import app.storage as storage_mod
+
+    storage_mod.set_storage(storage_mod.LocalStorage(str(tmp_path / "files")))
+    yield
+    storage_mod.set_storage(None)
+
+
+@pytest.fixture()
+def sample_pdf():
+    """夹具 PDF 读取 helper（spec 指定的测试资产，来自 #2 真实研究样本）。"""
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[2] / "research" / "markitdown-samples" / "pdf"
+
+    def _read(name: str) -> bytes:
+        return (base / name).read_bytes()
+
+    return _read
+
+
+@pytest.fixture()
+def tweak_settings():
+    """按测试改 settings 单例属性（用完恢复）：ALLOW_READER_DOWNLOAD 等开关。"""
+
+    import app.config as config_mod
+
+    touched: dict[str, object] = {}
+
+    def _tweak(**overrides):
+        s = config_mod.get_settings()
+        for key, value in overrides.items():
+            touched[key] = getattr(s, key)
+            setattr(s, key, value)
+
+    yield _tweak
+    s = config_mod.get_settings()
+    for key, value in touched.items():
+        setattr(s, key, value)
+
+
 @pytest.fixture()
 def api(db_engine):
     from fastapi.testclient import TestClient

@@ -17,6 +17,22 @@ UPLOADED = TaskStatus.UPLOADED
 CONVERTING = TaskStatus.CONVERTING
 
 
+@pytest.fixture(autouse=True)
+def _echo_handler(db):
+    """注册表注入测试用 echo 处理器：claim 语义测试不依赖真实转换管道。"""
+
+    def _handle(task_id: int) -> None:
+        with db_mod.SessionLocal() as s:
+            t = s.get(Task, task_id)
+            t.status = DONE
+            t.result = {"echo": t.payload}
+            s.commit()
+
+    worker.HANDLERS["echo"] = _handle
+    yield
+    worker.HANDLERS.pop("echo", None)
+
+
 @pytest.fixture()
 def db(test_database_url: str):
     from sqlalchemy import create_engine
@@ -40,8 +56,8 @@ def test_claim_oldest_first_and_exactly_once(db) -> None:
     with db() as s:
         s.add_all(
             [
-                Task(kind="convert", status=UPLOADED, payload={"n": 1}),
-                Task(kind="convert", status=UPLOADED, payload={"n": 2}),
+                Task(kind="echo", status=UPLOADED, payload={"n": 1}),
+                Task(kind="echo", status=UPLOADED, payload={"n": 2}),
             ]
         )
         s.commit()
@@ -58,7 +74,7 @@ def test_claim_oldest_first_and_exactly_once(db) -> None:
 
 def test_processed_task_not_reclaimed(db) -> None:
     with db() as s:
-        s.add(Task(kind="convert", status=UPLOADED, payload={"n": 1}))
+        s.add(Task(kind="echo", status=UPLOADED, payload={"n": 1}))
         s.commit()
 
     assert worker.run_once() is not None

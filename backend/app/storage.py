@@ -12,6 +12,10 @@ class Storage(Protocol):
         """读取文件内容；key 不存在时抛 FileNotFoundError。"""
         ...
 
+    def exists(self, key: str) -> bool:
+        """key 是否已存在（分阶段重试的产物探测）。"""
+        ...
+
     def delete(self, key: str) -> None:
         """删除文件；key 不存在时静默（幂等）。"""
         ...
@@ -45,7 +49,28 @@ class LocalStorage:
             raise FileNotFoundError(key)
         return p.read_bytes()
 
+    def exists(self, key: str) -> bool:
+        return self._resolve(key).is_file()
+
     def delete(self, key: str) -> None:
         p = self._resolve(key)
         if p.is_file():
             p.unlink()
+
+
+_storage: Storage | None = None
+
+
+def get_storage() -> Storage:
+    """进程级单例：API 与 worker 共用同一存储根。测试经 set_storage 重绑 tmp 目录。"""
+    global _storage
+    if _storage is None:
+        from .config import get_settings
+
+        _storage = LocalStorage(get_settings().storage_root)
+    return _storage
+
+
+def set_storage(storage: Storage | None) -> None:
+    global _storage
+    _storage = storage

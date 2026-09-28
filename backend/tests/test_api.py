@@ -13,28 +13,24 @@ def test_health(api: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
-def test_task_roundtrip_poll_semantics(api: TestClient, make_user, login) -> None:
-    """API 建任务 → worker 消费 → 轮询可见状态流转（spec：异步任务一律轮询）。"""
-    from sqlalchemy import select
-
-    import app.db as db_mod
-    from app.models import Task, TaskStatus
+def test_task_roundtrip_poll_semantics(api: TestClient, make_user, login, sample_pdf) -> None:
+    """上传建任务 → worker 消费 → 轮询可见状态流转（spec：异步任务一律轮询）。"""
+    from app import worker
 
     cookies = login(make_user(Role.ANALYST))
 
-    # API 侧建任务（骨架期无 POST /api/reports，直接经共享任务表投递）
-    with db_mod.SessionLocal() as db:
-        task = Task(kind="convert", status=TaskStatus.UPLOADED, payload={"report": 1})
-        db.add(task)
-        db.commit()
-        task_id = task.id
+    r = api.post(
+        "/api/reports",
+        files={"file": ("dongwu.pdf", sample_pdf("dongwu-002635-anjie-20241231.pdf"), "application/pdf")},
+        data={"broker": "东吴证券", "publish_date": "2024-12-31", "title": "安洁科技点评"},
+        cookies=cookies,
+    )
+    assert r.status_code == 202, r.text
+    task_id = r.json()["task_id"]
 
     r = api.get(f"/api/tasks/{task_id}", cookies=cookies)
     assert r.status_code == 200
     assert r.json()["status"] == "uploaded"
-
-    # worker 单轮消费
-    from app import worker
 
     done = worker.run_once()
     assert done is not None and done.id == task_id
@@ -43,7 +39,7 @@ def test_task_roundtrip_poll_semantics(api: TestClient, make_user, login) -> Non
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "done"
-    assert body["result"] == {"echo": {"report": 1}}
+    assert body["result"]["chars_cleaned"] > 0
     assert body["attempts"] == 1
 
 

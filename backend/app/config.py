@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     bootstrap_admin_email: str = ""  # 初始管理员引导（库中无 admin 时创建一次）
     bootstrap_admin_password: str = ""
 
+    # 研报入库与转换（#13）
+    upload_max_mb: int = 50  # 上传文件大小上限
+    allow_reader_download: bool = False  # 读者原始文件下载（默认拒，可放开）
+    report_soft_delete_days: int = 30  # 软删除恢复窗口（天）
+    scan_min_chars_per_page: int = 30  # 每页平均字符数低于此值判为扫描版（markitdown 静默空串防护）
+    markdown_min_chars: int = 200  # 转换输出字符数闸门（清洗前口径）
+
 
 @lru_cache
 def get_settings() -> Settings:

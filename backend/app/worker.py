@@ -1,18 +1,29 @@
-"""worker：轮询共享任务表的骨架。
+"""worker：轮询共享任务表，按 kind 分派处理器。
 
-转换/分析/订阅调度后续都在这里跑。骨架期任务处理器只有注册表 + 心跳；
-拿到任务即置 done（payload 回显），让端到端链路（API 建任务 → worker 消费）可观测。
+转换（#13）分三阶段执行，每阶段完成即把 stages_done 落库：
+  preflight（加密检测/解密重写 + 扫描闸门）→ convert（markitdown + 字符数闸门）
+  → persist（清洗 + 写回 report_files）
+失败任务可由 API 重置回 uploaded 重跑，已完成的阶段经 stages_done/产物探测跳过（分阶段重试）。
+后续 analyze/synthesize 处理器在同一注册表接入。
 """
 
 import datetime as dt
 import logging
 import time
+from typing import Callable
 
 from sqlalchemy import and_, func, or_, select, update
 
 from . import db
 from .config import get_settings
-from .models import Task, TaskStatus
+from .conversion import (
+    ConversionError,
+    clean_markdown,
+    convert_to_markdown,
+    preflight_pdf,
+)
+from .models import ReportFile, Task, TaskStatus
+from .storage import get_storage
 
 log = logging.getLogger("minereport.worker")
 
@@ -57,17 +68,129 @@ def claim_next_task() -> Task | None:
         return row
 
 
+# ---------- 任务处理器注册表 ----------
+
+HANDLERS: dict[str, Callable[[int], None]] = {}
+
+
+def _mark_failed(task_id: int, error_code: str, message: str, stage: str | None) -> None:
+    with db.SessionLocal() as s:
+        t = s.get(Task, task_id)
+        if t is None:
+            return
+        t.status = TaskStatus.FAILED
+        t.result = {"error_code": error_code, "error": message, "stage": stage}
+        s.commit()
+
+
 def run_once() -> Task | None:
-    """单轮：领取任务并立即置 done（骨架行为，供测试与端到端验证）。"""
+    """单轮：领取任务并按 kind 分派；失败落库（error_code 可编程判断），不让轮询循环退出。"""
     task = claim_next_task()
     if task is None:
         return None
-    with db.SessionLocal() as session:
-        t = session.get(Task, task.id)
-        t.status = TaskStatus.DONE
-        t.result = {"echo": task.payload}
-        session.commit()
+    try:
+        handler = HANDLERS.get(task.kind)
+        if handler is None:
+            _mark_failed(task.id, "unknown_kind", f"no handler for kind {task.kind!r}", None)
+        else:
+            handler(task.id)
+    except ConversionError as e:
+        _mark_failed(task.id, e.error_code, e.message, getattr(e, "stage", None))
+    except Exception:
+        log.exception("task %s 处理异常", task.id)
+        _mark_failed(task.id, "internal", "处理异常，详见 worker 日志", None)
     return task
+
+
+# ---------- convert：转换管道（三阶段） ----------
+
+class ConvertStage:
+    """convert 任务的三阶段名（payload.stages_done 与 result.stage 的词表）。"""
+
+    PREFLIGHT = "preflight"
+    CONVERT = "convert"
+    PERSIST = "persist"
+    ORDER = (PREFLIGHT, CONVERT, PERSIST)
+
+
+def _decrypted_key(storage_key: str) -> str:
+    return f"{storage_key}.decrypted.pdf"
+
+
+def _raw_markdown_key(storage_key: str) -> str:
+    return f"{storage_key}.raw.md"
+
+
+def _save_stage(task: Task, stages: set[str]) -> None:
+    task.payload = {**(task.payload or {}), "stages_done": sorted(stages)}
+
+
+def handle_convert(task_id: int) -> None:
+    storage = get_storage()
+    s = get_settings()
+    with db.SessionLocal() as session:
+        task = session.get(Task, task_id)
+        payload = dict(task.payload or {})
+        file = session.get(ReportFile, payload["report_file_id"])
+        if file is None:
+            raise ConversionError("file_missing", f"report_file {payload['report_file_id']} 不存在")
+        stages = set(payload.get("stages_done") or [])
+
+        try:
+            # 阶段 preflight：加密检测（空密码解密重写）+ 扫描版字符数闸门
+            if ConvertStage.PREFLIGHT not in stages:
+                original = storage.get(file.storage_key)
+                if file.filename.lower().endswith(".pdf"):
+                    preflighted = preflight_pdf(original, file.filename)
+                    if preflighted is not original:
+                        storage.put(_decrypted_key(file.storage_key), preflighted)
+                stages.add(ConvertStage.PREFLIGHT)
+                _save_stage(task, stages)
+                session.commit()
+
+            # 阶段 convert：markitdown + 输出字符数闸门（markitdown 静默空串防护）
+            raw_key = _raw_markdown_key(file.storage_key)
+            if ConvertStage.CONVERT not in stages or not storage.exists(raw_key):
+                decrypted = _decrypted_key(file.storage_key)
+                src_key = decrypted if storage.exists(decrypted) else file.storage_key
+                raw = convert_to_markdown(storage.get(src_key), file.filename)
+                if len(raw.strip()) < s.markdown_min_chars:
+                    raise ConversionError(
+                        "empty_output",
+                        f"转换输出仅 {len(raw.strip())} 字符（低于闸门 {s.markdown_min_chars}），"
+                        "疑似扫描版或空文档",
+                    )
+                storage.put(raw_key, raw.encode("utf-8"))
+                stages.add(ConvertStage.CONVERT)
+                _save_stage(task, stages)
+                session.commit()
+
+            # 阶段 persist：清洗落库
+            raw = storage.get(raw_key).decode("utf-8")
+            file.markdown_text = clean_markdown(raw)
+            file.converted_at = func.now()
+            task.status = TaskStatus.DONE
+            task.result = {
+                "report_id": file.report_id,
+                "report_file_id": file.id,
+                "chars_raw": len(raw),
+                "chars_cleaned": len(file.markdown_text),
+            }
+            session.commit()
+        except ConversionError as e:
+            e.stage = e.stage or _current_stage(stages)
+            raise
+
+
+def _current_stage(stages: set[str]) -> str:
+    """失败时报告未完成的阶段（已完成的阶段数即失败点）。"""
+    for stage in ConvertStage.ORDER:
+        if stage not in stages:
+            return stage
+    return ConvertStage.PERSIST
+
+
+HANDLERS["convert"] = handle_convert
 
 
 def main() -> None:
