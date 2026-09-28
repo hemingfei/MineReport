@@ -32,8 +32,17 @@ from . import analysis
 from .config import Settings, get_settings
 from .errors import AnalysisError
 from .llm import LLMClient, parse_llm_json
-from .models import Analysis, AnalysisTarget, ResearchReport, Synthesis, Task, TaskStatus, Theme
-from .themes import CURRENT_ANALYSIS_LINK, ReportTheme, ThemeStatus
+from .models import (
+    Analysis,
+    AnalysisTarget,
+    ReportTheme,
+    ResearchReport,
+    Synthesis,
+    Task,
+    TaskStatus,
+    Theme,
+)
+from .themes import ThemeStatus
 
 # ---------- prompt synth-v1 ----------
 
@@ -100,8 +109,7 @@ def select_input_reports(
     s = settings or get_settings()
     conds = (
         ReportTheme.theme_id == theme.id,
-        CURRENT_ANALYSIS_LINK,
-        ResearchReport.deleted_at.is_(None),
+        *analysis.live_current_conds(ReportTheme),
     )
     total = int(
         session.scalar(

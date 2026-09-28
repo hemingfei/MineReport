@@ -45,7 +45,6 @@ from ..models import (
     User,
 )
 from ..storage import get_storage
-from ..themes import CURRENT_ANALYSIS_LINK
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -273,7 +272,7 @@ def list_reports(
             select(ReportTheme.id).where(
                 ReportTheme.theme_id == theme_id,
                 ReportTheme.report_id == ResearchReport.id,
-                CURRENT_ANALYSIS_LINK,
+                *analysis.live_current_conds(ReportTheme),
             ).exists()
         )
 
@@ -558,7 +557,7 @@ def list_report_targets(
         return ReportTargetsOut(analysis_id=None, items=[])
     links = db.scalars(
         select(AnalysisTarget)
-        .where(AnalysisTarget.analysis_id == report.current_analysis_id)
+        .where(analysis.current_link(AnalysisTarget, report))
         .order_by(AnalysisTarget.seq)
     ).all()
     master = {

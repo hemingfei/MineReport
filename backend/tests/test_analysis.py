@@ -584,3 +584,66 @@ def test_tag_permissions_and_not_found(api, make_user, login, make_report) -> No
     assert api.delete(f"/api/reports/{report_id}/tags/x", cookies=reader).status_code == 403
     assert api.post("/api/reports/999999/tags", json={"name": "x"}, cookies=analyst).status_code == 404
     assert api.post(f"/api/reports/{report_id}/tags", json={"name": ""}, cookies=analyst).status_code == 422
+
+
+# ---------- 当前版投影谓词（analysis.current_link / live_current_conds） ----------
+
+def test_live_current_conds_keeps_current_version_alive_rows_only(make_report) -> None:
+    """三张投影表同款口径：换版后旧版投影不计、软删研报的投影不计。
+
+    题材选集/题材浏览计数/研报题材过滤/署名搜索/覆盖查询全部经此谓词派生，
+    行为变化在这里直测（端点级测试只覆盖各自装配）。
+    """
+    from app.db import session_scope
+    from app.models import AnalysisAuthor, AnalysisTarget, ReportTheme
+
+    alive_id, alive_file = make_report(MD_WITH_ANCHORS)    # 两版分析，指针指 v2
+    gone_id, gone_file = make_report(MD_WITH_ANCHORS)      # 软删双胞胎：当前版投影在但研报已删
+
+    def _mk_analysis(report_id: int, file_id: int, version: int) -> Analysis:
+        return Analysis(
+            report_id=report_id,
+            report_file_id=file_id,
+            version=version,
+            prompt_version="v1",
+            model="mock-llm",
+            prompt_tokens=1,
+            completion_tokens=1,
+            duration_ms=1,
+            result={},
+        )
+
+    with session_scope() as s:
+        v1 = _mk_analysis(alive_id, alive_file, 1)
+        v2 = _mk_analysis(alive_id, alive_file, 2)
+        gone = _mk_analysis(gone_id, gone_file, 1)
+        s.add_all([v1, v2, gone])
+        s.flush()
+        alive, dead = s.get(ResearchReport, alive_id), s.get(ResearchReport, gone_id)
+        alive.current_analysis_id = v2.id
+        dead.current_analysis_id = gone.id
+        dead.deleted_at = dt.datetime.now(dt.timezone.utc)
+        for proj, extra in (
+            (ReportTheme, {"raw_name": "题材词"}),
+            (AnalysisTarget, {"raw_name": "标的名", "stance": "提及"}),
+            (AnalysisAuthor, {"name": "分析师"}),
+        ):
+            s.add_all(
+                proj(analysis_id=a.id, report_id=rid, seq=0, **extra)
+                for a, rid in ((v1, alive_id), (v2, alive_id), (gone, gone_id))
+            )
+        s.commit()
+
+        for proj in (ReportTheme, AnalysisTarget, AnalysisAuthor):
+            rows = s.scalars(
+                select(proj)
+                .join(ResearchReport, ResearchReport.id == proj.report_id)
+                .where(*analysis.live_current_conds(proj))
+            ).all()
+            assert [r.analysis_id for r in rows] == [v2.id], proj.__name__
+
+        # 值形态（单报告视图免 join）：与指针属性值比较
+        links = s.scalars(
+            select(AnalysisTarget).where(analysis.current_link(AnalysisTarget, alive))
+        ).all()
+        assert [r.analysis_id for r in links] == [v2.id]

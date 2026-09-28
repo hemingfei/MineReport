@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..auth import require_role
 from ..db import get_db
+from .. import analysis
 from ..models import (
     AnalysisAuthor,
     AnalysisTarget,
@@ -130,8 +131,7 @@ def author_coverage(
         .join(ResearchReport, ResearchReport.id == ReportTheme.report_id)
         .outerjoin(Theme, Theme.id == ReportTheme.theme_id)
         .where(
-            CURRENT_ANALYSIS_LINK,
-            ResearchReport.deleted_at.is_(None),
+            *analysis.live_current_conds(ReportTheme),
             ReportTheme.report_id.in_(report_ids),
         )
     ).all()
@@ -150,8 +150,7 @@ def author_coverage(
         .join(ResearchReport, ResearchReport.id == AnalysisTarget.report_id)
         .join(TargetRow, TargetRow.code == AnalysisTarget.target_code)
         .where(
-            AnalysisTarget.analysis_id == ResearchReport.current_analysis_id,
-            ResearchReport.deleted_at.is_(None),
+            *analysis.live_current_conds(AnalysisTarget),
             AnalysisTarget.report_id.in_(report_ids),
             AnalysisTarget.target_code.is_not(None),
         )

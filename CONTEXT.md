@@ -32,6 +32,10 @@ _Avoid_: 外链、快照
 LLM 对单篇研报 markdown 的结构化提取结果：总结、题材归属、标的列表、评级等。一篇研报对应一份当前分析，可随 prompt 迭代重跑。
 _Avoid_: 摘要、解读
 
+**投影 (Projection)**:
+分析结果的可查询关联表（题材关联 report_themes / 标的 analysis_targets / 署名 analysis_authors），行随分析版本链生成、携带 analysis_id。"当前版投影"指 analysis_id 等于研报当前分析指针的行——重跑换版后旧版投影不计入查询口径。
+_Avoid_: 中间表、关联表（泛称时）
+
 **题材 (Theme)**:
 受控词表中的核心分类维度，是综合分析的入口。由 LLM 提议、人工审核入库，带定义与同义词，演化管理。例：AI 算力、创新药。
 _Avoid_: 板块、赛道、标签（与 tag 混用时）

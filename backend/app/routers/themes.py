@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..auth import require_role
 from ..db import get_db
+from .. import analysis
 from .. import synthesis
 from ..models import (
     ReportTheme,
@@ -32,7 +33,6 @@ from ..models import (
     User,
 )
 from ..themes import (
-    CURRENT_ANALYSIS_LINK,
     ThemeStatus,
     approve_theme,
     merge_theme,
@@ -126,7 +126,7 @@ def _counts_by_theme(db: OrmSession) -> tuple[dict[int, int], dict[int, int]]:
         db.execute(
             select(ReportTheme.theme_id, func.count(distinct(ReportTheme.report_id)))
             .join(ResearchReport, ResearchReport.id == ReportTheme.report_id)
-            .where(CURRENT_ANALYSIS_LINK, ResearchReport.deleted_at.is_(None))
+            .where(*analysis.live_current_conds(ReportTheme))
             .group_by(ReportTheme.theme_id)
         ).all()
     )
@@ -310,8 +310,7 @@ def list_theme_reports(
     offset = max(0, offset)
     conds = (
         ReportTheme.theme_id == theme.id,
-        CURRENT_ANALYSIS_LINK,
-        ResearchReport.deleted_at.is_(None),
+        *analysis.live_current_conds(ReportTheme),
     )
     total = db.scalar(
         select(func.count(distinct(ResearchReport.id)))

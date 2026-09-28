@@ -29,9 +29,43 @@ from . import search
 from .config import Settings, get_settings
 from .errors import AnalysisError
 from .llm import LLMClient, parse_llm_json
-from .models import Analysis, AnalysisAuthor, PromptTemplate, ReportFile, ResearchReport
+from .models import (
+    Analysis,
+    AnalysisAuthor,
+    AnalysisTarget,
+    PromptTemplate,
+    ReportFile,
+    ReportTheme,
+    ResearchReport,
+)
 from .targets import link_analysis_targets
 from .themes import link_analysis_themes
+
+# ---------- 当前版投影谓词（题材浏览/研报过滤/署名搜索/覆盖查询共用） ----------
+
+_Projection = type[ReportTheme] | type[AnalysisTarget] | type[AnalysisAuthor]
+
+
+def current_link(proj: _Projection, report: ResearchReport | None = None):
+    """投影行的"当前版"链接条件：投影 analysis_id == 研报当前分析指针。
+
+    report=None 为查询形态（与 ResearchReport.current_analysis_id 列比较，查询需
+    join 投影表与 ResearchReport）；传入具体研报对象为值形态（与其已加载的指针值
+    比较，单报告视图免 join）。
+    """
+    cur = report.current_analysis_id if report is not None else ResearchReport.current_analysis_id
+    return proj.analysis_id == cur
+
+
+def live_current_conds(proj: _Projection) -> tuple:
+    """当前版投影查询条件组：链接条件 + 研报未删。
+
+    换版策略（指针语义）与软删口径的唯一出处，三张投影表同款适用；调用方自行
+    负责 join 投影表与 ResearchReport——各端点的 join 方向 / count / distinct /
+    exists 形状是合法差异。
+    """
+    return (current_link(proj), ResearchReport.deleted_at.is_(None))
+
 
 # ---------- prompt v1（spike fulltext 胜出策略，枚举对齐 spec 终版） ----------
 
