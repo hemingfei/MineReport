@@ -69,7 +69,7 @@ describe("task 按钮态状态词", () => {
   it("在途/终态查词表，未知状态原样兜底", () => {
     expect(taskStatusLabel(mkTask("converting"))).toBe("转换中");
     expect(taskStatusLabel(mkTask("done"))).toBe("已完成");
-    // @ts-expect-error 未知状态（后端新枚举未跟进词表）不至于渲染空白
+    // 伪造词表外状态——查不到标签时须原样兜底，不至于渲染空白
     expect(taskStatusLabel(mkTask("queued" as TaskStatus))).toBe("queued");
   });
 });
