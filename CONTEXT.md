@@ -29,7 +29,7 @@ _Avoid_: 外链、快照
 ### 任务与管道
 
 **任务 (Task)**:
-API 与 worker 共享的异步队列载体（kind + payload + 状态机 uploaded→在途→done/failed）。kind 的处理器注册、入队口（enqueue）与领取后在途状态单点收敛在 worker 的 HANDLERS 注册表——新增任务类型只注册一项，不在入队点手拼 Task。
+API 与 worker 共享的异步队列载体（kind + payload + 状态机 uploaded→在途→done/failed）。kind 的处理器注册、入队口（enqueue）与领取后在途状态单点收敛在 worker 的 HANDLERS 注册表——新增任务类型只注册一项，不在入队点手拼 Task。前端对偶单点在 frontend/src/task.ts：终态副作用（useTaskTerminal）、result 键契约与错误文案（taskResultId/taskFailureText）、按钮状态词（taskStatusLabel）、进行中判定（isTaskSettled）——页面不手拼 result 键、不重写终态分支。
 _Avoid_: 作业、job
 
 ### 接口与形状

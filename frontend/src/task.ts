@@ -20,6 +20,14 @@ export function isTerminal(status: TaskStatus): boolean {
   return status === "done" || status === "failed";
 }
 
+/** 任务是否已拉到且到终态（null=尚未拉到，不算 settled）。
+ * "进行中"判定统一为 `taskId != null && !isTaskSettled(task)`：首次点击导入后
+ * 即视为进行中，消掉首轮轮询返回前的重入窗口；重复导入时任务对象仍是上一轮
+ * 终态（useTaskPolling 不清旧 task），首拍窗与旧版一致，后端幂等兜底。 */
+export function isTaskSettled(task: Task | null): boolean {
+  return task != null && isTerminal(task.status);
+}
+
 /** done 任务的产物 id 键契约（当前唯一取数键：synthesize → synthesis_id）；
  * 非法/缺席归 0（页面以 >0 判可跳转）。 */
 export function taskResultId(task: Task): number {

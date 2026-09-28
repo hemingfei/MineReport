@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, humanizeError, type TargetMatchItem, type TargetSummary } from "../api";
 import { useAuth } from "../auth";
 import { formatDateTime } from "../format";
-import { isTerminal, taskStatusLabel, useTaskPolling } from "../task";
+import { isTaskSettled, taskStatusLabel, useTaskPolling } from "../task";
 
 const REASON_LABEL: Record<string, string> = {
   inferred_code: "LLM 补码不可信",
@@ -188,6 +188,8 @@ export function TargetQueuePage() {
     }
   };
 
+  const importRunning = importTaskId !== null && !isTaskSettled(importTask);
+
   return (
     <section>
       <h1 className="page-title">标的确认队列</h1>
@@ -209,10 +211,13 @@ export function TargetQueuePage() {
             <span>同时回填曾用名（约 30 分钟）</span>
           </label>
           <div className="field field-btn">
-            <button type="button" className="btn btn-primary" onClick={onImport} disabled={importTaskId !== null && (importTask == null || !isTerminal(importTask.status))}>
-              {importTask != null && !isTerminal(importTask.status)
-                ? `导入${taskStatusLabel(importTask)}…`
-                : "导入 / 刷新主数据"}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onImport}
+              disabled={importRunning}
+            >
+              {importRunning ? `导入${taskStatusLabel(importTask)}…` : "导入 / 刷新主数据"}
             </button>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isTaskSettled,
   isTerminal,
   taskFailureText,
   taskResultId,
@@ -27,6 +28,14 @@ describe("task 状态词表", () => {
     expect(isTerminal("converting")).toBe(false);
     expect(isTerminal("analyzing")).toBe(false);
     expect(isTerminal("running")).toBe(false);
+  });
+
+  it("isTaskSettled：null 不算 settled（taskId 已设即视为进行中，防首拍重入），终态才算", () => {
+    expect(isTaskSettled(null)).toBe(false);
+    expect(isTaskSettled(mkTask("uploaded"))).toBe(false);
+    expect(isTaskSettled(mkTask("converting"))).toBe(false);
+    expect(isTaskSettled(mkTask("done"))).toBe(true);
+    expect(isTaskSettled(mkTask("failed"))).toBe(true);
   });
 });
 

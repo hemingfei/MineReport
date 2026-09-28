@@ -14,7 +14,7 @@ import {
   type ThemeSummary,
 } from "../api";
 import { useAuth } from "../auth";
-import { isTerminal, taskStatusLabel, useTaskPolling } from "../task";
+import { isTaskSettled, taskStatusLabel, useTaskPolling } from "../task";
 
 const PAGE_SIZE = 50;
 
@@ -313,8 +313,7 @@ export function ThemesPage() {
       .catch((err) => setPropError(humanizeError(err, "提议失败")));
   };
 
-  const importRunning =
-    importTaskId !== null && importTask != null && !isTerminal(importTask.status);
+  const importRunning = importTaskId !== null && !isTaskSettled(importTask);
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
