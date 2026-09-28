@@ -134,10 +134,16 @@ def _tmp_storage(tmp_path):
 
 @pytest.fixture()
 def sample_pdf():
-    """夹具 PDF 读取 helper（spec 指定的测试资产，来自 #2 真实研究样本）。"""
+    """夹具 PDF 读取 helper（spec 指定的测试资产，来自 #2 真实研究样本）。
+
+    research/ 经 .git/info/exclude 排除（真实券商研报不入公开仓库）；
+    资产缺席的环境（如 CI checkout）相关测试自动跳过，本地照跑全量。
+    """
     from pathlib import Path
 
     base = Path(__file__).resolve().parents[2] / "research" / "markitdown-samples" / "pdf"
+    if not (base / "dongwu-002635-anjie-20241231.pdf").exists():
+        pytest.skip("research/markitdown-samples 本地资产不在仓库，相关测试跳过")
 
     def _read(name: str) -> bytes:
         return (base / name).read_bytes()

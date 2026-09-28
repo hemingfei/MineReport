@@ -11,7 +11,21 @@ from app import conversion
 from app.conversion import ConversionError
 
 
+def _has_samples() -> bool:
+    from pathlib import Path
+
+    return (
+        Path(__file__).resolve().parents[2]
+        / "research"
+        / "markitdown-samples"
+        / "pdf"
+        / "dongwu-002635-anjie-20241231.pdf"
+    ).exists()
+
+
 def _pdf(name: str) -> bytes:
+    if not _has_samples():
+        pytest.skip("research/markitdown-samples 本地资产不在仓库，相关测试跳过")
     from pathlib import Path
 
     p = Path(__file__).resolve().parents[2] / "research" / "markitdown-samples" / "pdf" / name
@@ -142,6 +156,7 @@ def test_preflight_scanned_gate_threshold(monkeypatch) -> None:
 
 # ---------- markitdown 转换 ----------
 
+@pytest.mark.skipif(not _has_samples(), reason="research/markitdown-samples 本地资产不在仓库，相关测试跳过")
 def test_convert_to_markdown_matches_reference() -> None:
     """markitdown 输出与 #2 研究的参考 md 逐字节一致（同版本确定性）。"""
     from pathlib import Path

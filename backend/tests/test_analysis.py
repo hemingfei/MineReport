@@ -89,6 +89,8 @@ def _run_task(api: TestClient, cookies: dict, task_id: int) -> dict:
 
 
 def _upload(api: TestClient, cookies: dict) -> dict:
+    if not (SAMPLES_DIR / "pdf" / DONGWU_PDF).exists():
+        pytest.skip("research/markitdown-samples 本地资产不在仓库，相关测试跳过")
     r = api.post(
         "/api/reports",
         files={"file": (DONGWU_PDF, (SAMPLES_DIR / "pdf" / DONGWU_PDF).read_bytes(), "application/pdf")},

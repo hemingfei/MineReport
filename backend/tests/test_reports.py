@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import worker
@@ -30,6 +31,8 @@ def _upload(
     publish_date: str = "2024-12-31",
     title: str | None = None,
 ):
+    if not (SAMPLES_DIR / "pdf" / DONGWU).exists():
+        pytest.skip("research/markitdown-samples 本地资产不在仓库，相关测试跳过")
     data = {"broker": broker, "publish_date": publish_date}
     if title is not None:
         data["title"] = title
