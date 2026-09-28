@@ -1,0 +1,145 @@
+{
+  "broker": "国元证券",
+  "authors": [
+    {
+      "name": "李典",
+      "cert": "S0020516080001"
+    }
+  ],
+  "publish_date": "2024-12-31",
+  "report_type": "深度",
+  "title": "模型能力向上价格向下，应用繁荣——AI行业深度报告",
+  "summary": "本报告为AI行业深度报告，指出海内外大模型竞争格局收敛，o1开启推理侧新范式。大模型成本下行驱动应用端繁荣，AI Agent带动交互升级，B端变现模式清晰，C端有望出现杀手级产品，端侧硬件加速落地，2025年看好AI板块投资机会。",
+  "themes": [
+    {
+      "name": "AI大模型",
+      "reason": "报告分析海内外大模型竞争格局，o1开启推理侧Scaling Law新范式，2024年国内大模型中标超千个，商业化落地提速"
+    },
+    {
+      "name": "AI应用",
+      "reason": "大模型调用成本下行降低创新门槛，B端变现模式清晰，金融、政务、医疗等领域渗透加速，C端流量增长，AI搜索等有望成杀手级产品"
+    },
+    {
+      "name": "AI硬件",
+      "reason": "端侧小模型推动AIPC、AI眼镜等硬件落地加速，AI眼镜为核心关键载体"
+    },
+    {
+      "name": "AI Agent",
+      "reason": "带动交互方式升级，AaaS为新兴服务模式，国内外大厂加速布局，有望重塑C端流量入口、推动B端场景落地"
+    },
+    {
+      "name": "MaaS",
+      "reason": "AI领域主流商业模式，提供全栈平台、资产库及开发工具三类服务"
+    },
+    {
+      "name": "AI眼镜",
+      "reason": "端侧落地关键硬件载体，Meta Ray-Ban Meta成首个消费级爆款，国内多家厂商已发布相关产品"
+    },
+    {
+      "name": "AIPC",
+      "reason": "Gartner预测2024年出货量达4300万台同比增99.8%，2025年占PC总出货量43%"
+    },
+    {
+      "name": "具身智能",
+      "reason": "ByteDance Research的具身智能模型GR-1、GR-2上榜全球AI榜单"
+    }
+  ],
+  "targets": [
+    {
+      "code": "300418",
+      "name": "昆仑万维",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "000681",
+      "name": "视觉中国",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002517",
+      "name": "恺英网络",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300002",
+      "name": "神州泰岳",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002558",
+      "name": "巨人网络",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "600633",
+      "name": "浙数文化",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002624",
+      "name": "完美世界",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "603444",
+      "name": "吉比特",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "601595",
+      "name": "上海电影",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300364",
+      "name": "中文在线",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002315",
+      "name": "焦点科技",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "快手",
+      "stance": "提及",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002230",
+      "name": "科大讯飞",
+      "stance": "提及",
+      "view": "为2024年国内大模型中标领先企业",
+      "has_forecast": false
+    }
+  ],
+  "rating": {
+    "action": null,
+    "maintained": true
+  },
+  "risk_notes": "技术进展不及预期的风险，大模型安全性风险，应用推广不及预期的风险"
+}

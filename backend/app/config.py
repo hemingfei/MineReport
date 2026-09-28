@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     scan_min_chars_per_page: int = 30  # 每页平均字符数低于此值判为扫描版（markitdown 静默空串防护）
     markdown_min_chars: int = 200  # 转换输出字符数闸门（清洗前口径）
 
+    # LLM 分析管道（#15）。凭据仅环境变量（LLM_BASE_URL / LLM_API_KEY / LLM_MODEL），源码无字面量
+    llm_base_url: str = ""  # OpenAI 兼容端点（含版本路径，如 https://host/v1）
+    llm_api_key: str = ""
+    llm_model: str = ""
+    llm_timeout_seconds: float = 300.0  # 整篇单次调用深度报告实测 52~103s，留足余量
+    analysis_max_input_chars: int = 50_000  # 超过则降级分块兜底（spec 阈值）
+    analysis_chunk_chars: int = 26_000  # 分块大小（中文约 1 字 = 1 token）
+    analysis_chunk_overlap: int = 1_000
+    analysis_head_chars: int = 3_000  # publish_date 正则锚定的"首页"窗口
+
 
 @lru_cache
 def get_settings() -> Settings:

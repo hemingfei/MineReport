@@ -1,0 +1,122 @@
+{
+  "broker": "国元证券",
+  "authors": [
+    {
+      "name": "李典",
+      "cert": "S0020516080001"
+    }
+  ],
+  "publish_date": "2024-12-31",
+  "report_type": "深度",
+  "title": "模型能力向上价格向下，应用繁荣——AI行业深度报告",
+  "summary": "本报告梳理AI大模型层发展趋势，海外格局收敛，o1引领推理侧新范式，国内厂商差异化布局；模型能力提升、调用成本下行驱动应用端繁荣，看好2025年AI相关领域投资机会。",
+  "themes": [
+    {
+      "name": "AI大模型",
+      "reason": "研报分析海外大模型形成五强竞争格局，o1系列引领推理侧Scaling Law新范式，国内大模型厂商差异化布局"
+    },
+    {
+      "name": "AI应用",
+      "reason": "研报指出模型成本下行降低创新门槛，看好2025年B端金融政务医疗、C端AI搜索等应用落地机会"
+    },
+    {
+      "name": "AI Agent",
+      "reason": "研报指出AI交互从Copilot向Agent升级，C端将重塑流量入口，B端加速行业场景落地"
+    },
+    {
+      "name": "AI硬件",
+      "reason": "研报指出端侧小模型发展推动AIPC、AI手机、AI眼镜等硬件落地，AI眼镜为关键载体"
+    }
+  ],
+  "targets": [
+    {
+      "code": "300418",
+      "name": "昆仑万维",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "000681",
+      "name": "视觉中国",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002517",
+      "name": "恺英网络",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300002",
+      "name": "神州泰岳",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002558",
+      "name": "巨人网络",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "600633",
+      "name": "浙数文化",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002624",
+      "name": "完美世界",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "603444",
+      "name": "吉比特",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "601595",
+      "name": "上海电影",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300364",
+      "name": "中文在线",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002315",
+      "name": "焦点科技",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "快手",
+      "stance": "推荐",
+      "view": "研报重点关注的AI领域标的",
+      "has_forecast": false
+    }
+  ],
+  "rating": {
+    "action": null,
+    "maintained": true
+  },
+  "risk_notes": "技术进展不及预期的风险，大模型安全性风险，应用推广不及预期的风险"
+}

@@ -1,0 +1,144 @@
+{
+  "broker": "国元证券",
+  "authors": [
+    {
+      "name": "李典",
+      "cert": "S0020516080001"
+    }
+  ],
+  "publish_date": "2024-12-31",
+  "report_type": "深度",
+  "title": "模型能力向上价格向下，应用繁荣——AI行业深度报告",
+  "summary": "本报告研判AI大模型海外形成五强格局，o1开启推理侧迭代新范式；模型能力提升、调用成本下行驱动应用创新，MaaS、AaaS模式加速落地，B端金融政务医疗、C端AI搜索等场景商业化提速，AI硬件加速渗透，2025年看好AI全产业链投资机会。",
+  "themes": [
+    {
+      "name": "AI大模型",
+      "reason": "海外形成五强竞争格局，国内多主体差异化布局，OpenAI o1引领推理侧迭代新范式"
+    },
+    {
+      "name": "AI应用",
+      "reason": "大模型调用成本下行降低创新门槛，MaaS、AaaS模式加速落地，B端、C端多场景商业化提速，2025年进入价值落地期"
+    },
+    {
+      "name": "AI Agent",
+      "reason": "AI交互方式从Copilot向Agent升级，C端有望重塑流量入口，B端加速行业场景落地"
+    },
+    {
+      "name": "AI硬件",
+      "reason": "AI+硬件进程加快，端侧小模型发展推动AIPC、AI手机、AI眼镜等落地，AI眼镜为关键载体"
+    },
+    {
+      "name": "MaaS",
+      "reason": "为大模型主流商业模式，可提供全栈平台、资产库及开发工具等服务"
+    },
+    {
+      "name": "AaaS",
+      "reason": "作为新兴服务模式，可助力大模型落地多元应用场景"
+    }
+  ],
+  "targets": [
+    {
+      "code": null,
+      "name": "昆仑万维",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "视觉中国",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "恺英网络",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "神州泰岳",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "巨人网络",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "浙数文化",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "完美世界",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "吉比特",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "上海电影",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "中文在线",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "焦点科技",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": null,
+      "name": "快手",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002230",
+      "name": "科大讯飞",
+      "stance": "提及",
+      "view": "为国内大模型中标领先企业",
+      "has_forecast": false
+    },
+    {
+      "code": "601360",
+      "name": "三六零",
+      "stance": "提及",
+      "view": "旗下360AI搜索位列11月全球AI产品web端访问量第5位",
+      "has_forecast": false
+    }
+  ],
+  "rating": {
+    "action": null,
+    "maintained": true
+  },
+  "risk_notes": "技术进展不及预期的风险，大模型安全性风险，应用推广不及预期的风险"
+}

@@ -135,7 +135,7 @@ def tweak_settings():
     def _tweak(**overrides):
         s = config_mod.get_settings()
         for key, value in overrides.items():
-            touched[key] = getattr(s, key)
+            touched.setdefault(key, getattr(s, key))  # 只记首次的原值：重复 tweak 不覆盖基线
             setattr(s, key, value)
 
     yield _tweak

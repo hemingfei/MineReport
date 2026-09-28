@@ -4,7 +4,9 @@
   preflight（加密检测/解密重写 + 扫描闸门）→ convert（markitdown + 字符数闸门）
   → persist（清洗 + 写回 report_files）
 失败任务可由 API 重置回 uploaded 重跑，已完成的阶段经 stages_done/产物探测跳过（分阶段重试）。
-后续 analyze/synthesize 处理器在同一注册表接入。
+
+分析（#15）：convert 完成后链式进入 analyzing（LLM 未配置则记 skipped 后 done）；
+reanalyze/批量重跑产生独立 analyze 任务（跳过转换，直接分析最近转换完成的文件）。
 """
 
 import datetime as dt
@@ -12,9 +14,9 @@ import logging
 import time
 from typing import Callable
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 
-from . import db
+from . import analysis, db
 from .config import get_settings
 from .conversion import (
     ConversionError,
@@ -22,7 +24,8 @@ from .conversion import (
     convert_to_markdown,
     preflight_pdf,
 )
-from .models import ReportFile, Task, TaskStatus
+from .errors import AnalysisError
+from .models import ReportFile, ResearchReport, Task, TaskStatus
 from .storage import get_storage
 
 log = logging.getLogger("minereport.worker")
@@ -32,18 +35,17 @@ def claim_next_task() -> Task | None:
     """领取下一待处理任务（单条 UPDATE ... RETURNING 原子完成）。
 
     子查询 FOR UPDATE SKIP LOCKED：并发 worker 争抢时直接跳过已锁行取下一条，
-    且锁释放后 EvalPlanQual 复检状态条件，不会重领已被改成 converting 的行；
-    外层再挂一份状态复查兜底。converting 超过租约（claimed_at 过旧）的任务
-    视为 worker 遗弃，可重新领取。
+    且锁释放后 EvalPlanQual 复检状态条件，不会重领已被改走状态的行；
+    外层再挂一份状态复查兜底。CONVERTING/ANALYZING 超过租约（claimed_at 过旧）
+    的任务视为 worker 遗弃，可重新领取；领取时按任务类型写入正确的在途状态
+    （convert → converting，analyze → analyzing）。
     """
     s = get_settings()
     lease_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=s.worker_lease_seconds)
+    in_flight = Task.status.in_((TaskStatus.CONVERTING, TaskStatus.ANALYZING))
     eligible = or_(
         Task.status == TaskStatus.UPLOADED,
-        and_(
-            Task.status == TaskStatus.CONVERTING,
-            Task.claimed_at < lease_cutoff,
-        ),
+        and_(in_flight, Task.claimed_at < lease_cutoff),
     )
     candidate = (
         select(Task.id)
@@ -58,7 +60,10 @@ def claim_next_task() -> Task | None:
             update(Task)
             .where(Task.id == candidate, eligible)
             .values(
-                status=TaskStatus.CONVERTING,
+                status=case(
+                    (Task.kind == "analyze", TaskStatus.ANALYZING),
+                    else_=TaskStatus.CONVERTING,
+                ),
                 attempts=Task.attempts + 1,
                 claimed_at=func.now(),
             )
@@ -96,6 +101,8 @@ def run_once() -> Task | None:
             handler(task.id)
     except ConversionError as e:
         _mark_failed(task.id, e.error_code, e.message, getattr(e, "stage", None))
+    except AnalysisError as e:
+        _mark_failed(task.id, e.error_code, e.message, e.stage or "analyze")
     except Exception:
         log.exception("task %s 处理异常", task.id)
         _mark_failed(task.id, "internal", "处理异常，详见 worker 日志", None)
@@ -165,17 +172,32 @@ def handle_convert(task_id: int) -> None:
                 _save_stage(task, stages)
                 session.commit()
 
-            # 阶段 persist：清洗落库
+            # 阶段 persist：清洗落库（先提交——分析失败不回滚转换成果，重试时三阶段全跳过）
             raw = storage.get(raw_key).decode("utf-8")
             file.markdown_text = clean_markdown(raw)
             file.converted_at = func.now()
-            task.status = TaskStatus.DONE
             task.result = {
                 "report_id": file.report_id,
                 "report_file_id": file.id,
                 "chars_raw": len(raw),
                 "chars_cleaned": len(file.markdown_text),
             }
+            session.commit()
+
+            # 链式分析（spec 状态机 converting→analyzing→done）：LLM 未配置或研报已被
+            # 软删则记 skipped（转换成果不受影响；与 handle_analyze 的删除检查保持一致）
+            report = session.get(ResearchReport, file.report_id)
+            if analysis.llm_ready() and report is not None and report.deleted_at is None:
+                task.status = TaskStatus.ANALYZING
+                session.commit()
+                a = analysis.run_analysis(session, report, file)
+                task.result = {**task.result, "analysis": {"analysis_id": a.id, "version": a.version}}
+            else:
+                reason = (
+                    "report_deleted" if analysis.llm_ready() else "llm_not_configured"
+                )
+                task.result = {**task.result, "analysis": {"skipped": reason}}
+            task.status = TaskStatus.DONE
             session.commit()
         except ConversionError as e:
             e.stage = e.stage or _current_stage(stages)
@@ -191,6 +213,42 @@ def _current_stage(stages: set[str]) -> str:
 
 
 HANDLERS["convert"] = handle_convert
+
+
+# ---------- analyze：独立分析任务（reanalyze / 批量重跑） ----------
+
+def handle_analyze(task_id: int) -> None:
+    """跳过转换，直接分析 payload 指定文件（缺省取最近转换完成者）。
+    失败不留半版本：Analysis 行仅在提取归一全部成功后插入。"""
+    with db.SessionLocal() as session:
+        task = session.get(Task, task_id)
+        payload = dict(task.payload or {})
+        report = session.get(ResearchReport, payload["report_id"])
+        if report is None or report.deleted_at is not None:
+            raise AnalysisError("report_missing", f"研报 {payload['report_id']} 不存在或已删除")
+
+        file_id = payload.get("report_file_id")
+        if file_id is not None:
+            file = session.get(ReportFile, file_id)
+            if file is None or file.report_id != report.id:
+                raise AnalysisError("file_missing", f"report_file {file_id} 不属于该研报")
+        else:
+            file = analysis.latest_converted_file(session, report.id)
+            if file is None:
+                raise AnalysisError("markdown_missing", "研报尚无转换完成的文件，无法分析")
+
+        task.status = TaskStatus.ANALYZING
+        session.commit()
+        a = analysis.run_analysis(session, report, file)
+        task.status = TaskStatus.DONE
+        task.result = {
+            "report_id": report.id,
+            "analysis": {"analysis_id": a.id, "version": a.version},
+        }
+        session.commit()
+
+
+HANDLERS["analyze"] = handle_analyze
 
 
 def main() -> None:

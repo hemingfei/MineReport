@@ -1,0 +1,129 @@
+{
+  "broker": "国元证券",
+  "authors": [
+    {
+      "name": "李典",
+      "cert": "S0020516080001"
+    }
+  ],
+  "publish_date": "2024-12-31",
+  "report_type": "深度",
+  "title": "模型能力向上价格向下，应用繁荣——AI行业深度报告",
+  "summary": "本报告为国元证券2024年底发布的AI行业深度报告，分析海内外大模型竞争格局，o1引领推理侧新范式；模型成本下行推动AI应用、AI Agent、AI硬件等赛道发展，B端商业化提速，C端流量增长，看好2025年AI产业链投资机会。",
+  "themes": [
+    {
+      "name": "AI大模型",
+      "reason": "报告分析海内外大模型竞争格局，o1引领推理侧新范式，2024年国内大模型B端中标量快速增长，行业需求加速释放"
+    },
+    {
+      "name": "AI应用",
+      "reason": "模型成本下行降低创新门槛，C端应用流量持续增长，B端商业化路径清晰，金融、政务、医疗等垂直场景落地加速"
+    },
+    {
+      "name": "AI Agent",
+      "reason": "海内外厂商加速布局AI Agent，C端有望重塑流量入口，B端可加速多行业场景落地"
+    },
+    {
+      "name": "AI硬件",
+      "reason": "AI+硬件进程加快，AIPC、AI手机、AI眼镜等端侧硬件产品加速落地"
+    }
+  ],
+  "targets": [
+    {
+      "code": "300418",
+      "name": "昆仑万维",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "000681",
+      "name": "视觉中国",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002517",
+      "name": "恺英网络",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300002",
+      "name": "神州泰岳",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002558",
+      "name": "巨人网络",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "600633",
+      "name": "浙数文化",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002624",
+      "name": "完美世界",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "603444",
+      "name": "吉比特",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "601595",
+      "name": "上海电影",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "300364",
+      "name": "中文在线",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002315",
+      "name": "焦点科技",
+      "stance": "推荐",
+      "view": "研报重点关注标的",
+      "has_forecast": false
+    },
+    {
+      "code": "002230",
+      "name": "科大讯飞",
+      "stance": "提及",
+      "view": "国内大模型B端中标领先企业",
+      "has_forecast": null
+    },
+    {
+      "code": "601360",
+      "name": "三六零",
+      "stance": "提及",
+      "view": "旗下360AI搜索位列11月全球AI产品web端访问量第5位",
+      "has_forecast": null
+    }
+  ],
+  "rating": {
+    "action": null,
+    "maintained": true
+  },
+  "risk_notes": "技术进展不及预期的风险，大模型安全性风险，应用推广不及预期的风险"
+}

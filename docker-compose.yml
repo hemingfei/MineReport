@@ -29,6 +29,10 @@ services:
       ALLOW_READER_DOWNLOAD: ${ALLOW_READER_DOWNLOAD:-false}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # API 容器只做就绪判定（reanalyze 的 503 闸），实际调用在 worker；两处同源
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     ports:
       - "8000:8000"
     volumes:
@@ -45,6 +49,10 @@ services:
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/minereport
       STORAGE_ROOT: /data/files
       WORKER_ID: worker-1
+      # 分析管道凭据只从环境变量读取（spec：源码/示例/测试不落可用凭据字面量）
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     volumes:
       - filedata:/data
     depends_on:

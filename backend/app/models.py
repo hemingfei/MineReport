@@ -1,5 +1,6 @@
 """SQLAlchemy 模型。Task 为 API 与 worker 共享的任务队列载体；User/Invitation/UserSession
-支撑邀请制认证；ResearchReport/ReportFile 支撑研报入库（ADR-0001 组合键 + 软删除）。"""
+支撑邀请制认证；ResearchReport/ReportFile 支撑研报入库（ADR-0001 组合键 + 软删除）；
+PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）。"""
 
 import datetime as dt
 
@@ -22,6 +23,9 @@ class Role:
 
 
 class TaskStatus:
+    # spec 状态机字面：uploaded → converting → analyzing → done | failed。
+    # uploaded 是一切任务的入队态（analyze 任务并非字面"上传"，指排队待领取）；
+    # converting/analyzing 同时充当 worker 租约在途标记，超过租约可重领。
     UPLOADED = "uploaded"
     CONVERTING = "converting"
     ANALYZING = "analyzing"
@@ -122,6 +126,11 @@ class ResearchReport(Base):
     title_norm: Mapped[str] = mapped_column(String(512), comment="归一标题（去空白/全半角/大小写），组合键成员")
     broker: Mapped[str] = mapped_column(String(128), comment="券商（组合键成员）")
     publish_date: Mapped[dt.date] = mapped_column(Date, comment="发布日期（组合键成员）")
+    current_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analyses.id", use_alter=True, name="fk_reports_current_analysis", ondelete="SET NULL"),
+        nullable=True,
+        comment="当前生效的分析版本（版本链头指针；use_alter 破解与 analyses 表的循环依赖）",
+    )
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="入库人")
     deleted_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="软删除时间；NULL 即未删除"
@@ -157,4 +166,77 @@ class ReportFile(Base):
     )
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PromptTemplate(Base):
+    """prompt 模板版本化入库（spec 分析管道决策）：重跑时 Analysis 记录所用版本。
+
+    user_template 中 `{markdown}` 为占位符（渲染用 str.replace，模板可含 JSON 花括号）。
+    当前模板 = id 最大者；新增版本插行即生效。
+    """
+
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    version: Mapped[str] = mapped_column(String(32), unique=True, comment="如 v1")
+    system_prompt: Mapped[str] = mapped_column(Text)
+    user_template: Mapped[str] = mapped_column(Text, comment="{markdown} 占位")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Analysis(Base):
+    """研报结构化分析：版本链（version++），reports.current_analysis_id 指向当前版。
+
+    每版记录完整审计：prompt_version、model、prompt/completion tokens、耗时
+    （spec：分析质量的人工迭代轨迹）。result 为归一后的 spec schema JSON
+    （含后处理产物 publish_date_source 与 targets[].code_source）。
+    题材/标的以原始字符串暂存（受控词表与主数据规范化由 #16/#17 接入）。
+    """
+
+    __tablename__ = "analyses"
+    __table_args__ = (Index("uq_analyses_report_version", "report_id", "version", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    report_file_id: Mapped[int] = mapped_column(
+        ForeignKey("report_files.id"), comment="本版分析的输入文件（多来源文件后到优先）"
+    )
+    version: Mapped[int] = mapped_column(Integer, comment="版本号，从 1 递增")
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_tokens: Mapped[int] = mapped_column(Integer)
+    completion_tokens: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer, comment="LLM 调用总耗时（含分块兜底的多趟）")
+    result: Mapped[dict] = mapped_column(JSON, comment="spec schema 分析结果（归一后）")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Tag(Base):
+    """自由 tag（与受控题材词表是两层体系）：轻量、无状态机、按名复用。"""
+
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, comment="归一后的展示名")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReportTag(Base):
+    """研报↔tag 多对多关联（spec 数据模型）。"""
+
+    __tablename__ = "report_tags"
+
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id"), primary_key=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
