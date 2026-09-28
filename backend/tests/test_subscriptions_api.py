@@ -207,7 +207,7 @@ def test_delete_subscription_with_history(api, make_user, login, active_theme, d
         ref = s.get(ExternalRef, ref_id)
         assert ref is not None and ref.subscription_id is None
         # 额度计数不因订阅删除丢失
-    quota = api.get("/api/connector/quota", cookies=cookie).json()
+    quota = api.get("/api/subscriptions/quota", cookies=cookie).json()
     assert quota["downloads_total"] == 1
 
 
@@ -239,17 +239,17 @@ def test_manual_download_flow(api, make_user, login, active_theme, db_engine) ->
     ref_id = make_ref_row(sub_id)
 
     # 额度提示（下载确认框数据源）
-    quota = api.get("/api/connector/quota", cookies=cookie).json()
+    quota = api.get("/api/subscriptions/quota", cookies=cookie).json()
     assert quota["hints"]["apifake"] == "fake 会扣额度"
     assert quota["downloads_today"] == 0 and quota["downloads_total"] == 0
 
-    r = api.post("/api/refs/%d/download" % ref_id, cookies=cookie)
+    r = api.post("/api/subscriptions/refs/%d/download" % ref_id, cookies=cookie)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ref"]["status"] == "ingested" and body["report_id"] > 0 and body["task_id"] > 0
 
     # 额度计数 + 日志（admin）
-    quota = api.get("/api/connector/quota", cookies=cookie).json()
+    quota = api.get("/api/subscriptions/quota", cookies=cookie).json()
     assert quota["downloads_total"] == 1 and quota["downloads_today"] == 1
     admin = login(make_user("admin"))
     runs = api.get("/api/admin/connector-runs", cookies=admin).json()
@@ -277,7 +277,7 @@ def test_manual_download_failure_marks_ref(api, make_user, login, active_theme, 
     monkeypatch.setattr(
         subs_router.scheduler, "build_connector", lambda cid: Failing(), raising=False
     )
-    r = api.post("/api/refs/%d/download" % ref_id, cookies=cookie)
+    r = api.post("/api/subscriptions/refs/%d/download" % ref_id, cookies=cookie)
     assert r.status_code == 502
     with session_scope() as s:
         from app.models import ExternalRef

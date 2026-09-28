@@ -22,7 +22,7 @@ from ..db import get_db
 from ..errors import ConnectorError, PipelineError
 from ..models import ConnectorRun, ExternalRef, Role, Subscription, Theme, User
 
-router = APIRouter(prefix="/api", tags=["subscriptions"])
+router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 
 
 class SubscriptionCreate(BaseModel):
@@ -146,7 +146,7 @@ def _get_own_subscription(db: OrmSession, sub_id: int, user: User) -> Subscripti
 
 
 @router.post(
-    "/subscriptions",
+    "",
     response_model=SubscriptionOut,
     status_code=status.HTTP_201_CREATED,
 )
@@ -183,7 +183,7 @@ def create_subscription(
     return _sub_out(sub, _theme_names(db, [sub]))
 
 
-@router.get("/subscriptions", response_model=SubscriptionListOut)
+@router.get("", response_model=SubscriptionListOut)
 def list_subscriptions(
     user: User = Depends(require_role(Role.ANALYST)),
     db: OrmSession = Depends(get_db),
@@ -197,7 +197,7 @@ def list_subscriptions(
     return SubscriptionListOut(items=[_sub_out(s, names) for s in subs], total=len(subs))
 
 
-@router.patch("/subscriptions/{sub_id}", response_model=SubscriptionOut)
+@router.patch("/{sub_id}", response_model=SubscriptionOut)
 def patch_subscription(
     sub_id: int,
     body: SubscriptionPatch,
@@ -225,7 +225,7 @@ def patch_subscription(
     return _sub_out(sub, _theme_names(db, [sub]))
 
 
-@router.delete("/subscriptions/{sub_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{sub_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_subscription(
     sub_id: int,
     user: User = Depends(require_role(Role.ANALYST)),
@@ -239,7 +239,7 @@ def delete_subscription(
 # ---------- 发现记录与手动下载 ----------
 
 
-@router.get("/subscriptions/refs", response_model=RefListOut)
+@router.get("/refs", response_model=RefListOut)
 def list_refs(
     status_filter: str | None = None,
     limit: int = 50,
@@ -320,7 +320,7 @@ def _count_downloads(db: OrmSession) -> tuple[int, int]:
     return today, total
 
 
-@router.get("/connector/quota", response_model=QuotaOut)
+@router.get("/quota", response_model=QuotaOut)
 def connector_quota(
     user: User = Depends(require_role(Role.ANALYST)),
     db: OrmSession = Depends(get_db),

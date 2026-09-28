@@ -650,10 +650,10 @@ export const api = {
 
   /** 手动单篇下载（额度提示后的确认动作）→ 入库 + convert 任务 */
   downloadRef: (refId: number) =>
-    request<ManualDownloadResult>(`/api/refs/${refId}/download`, { method: "POST" }),
+    request<ManualDownloadResult>(`/api/subscriptions/refs/${refId}/download`, { method: "POST" }),
 
   /** 额度汇总 + 各连接器下载提示文案 */
-  getConnectorQuota: () => request<ConnectorQuota>("/api/connector/quota"),
+  getConnectorQuota: () => request<ConnectorQuota>("/api/subscriptions/quota"),
 
   /** 连接器运行日志（admin）：成功/失败/死信/告警/手动下载 */
   listConnectorRuns: (filters: { event?: string; subscription_id?: number; limit?: number; offset?: number } = {}) =>

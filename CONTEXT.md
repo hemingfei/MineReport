@@ -32,6 +32,12 @@ _Avoid_: 外链、快照
 API 与 worker 共享的异步队列载体（kind + payload + 状态机 uploaded→在途→done/failed）。kind 的处理器注册、入队口（enqueue）与领取后在途状态单点收敛在 worker 的 HANDLERS 注册表——新增任务类型只注册一项，不在入队点手拼 Task。
 _Avoid_: 作业、job
 
+### 接口与形状
+
+**资源前缀 (Resource Prefix)**:
+每个 router 一个资源前缀（/api/reports、/api/subscriptions…），模块内所有端点同根——子资源与动作挂在根下（发现记录列表与下载同为 /api/subscriptions/refs…，额度为 /api/subscriptions/quota），不立裸 /api 路径；管理端点归 /api/admin（如 connector-runs）。新增端点先定归属根，再写路径。
+_Avoid_: 裸 /api 前缀、单数资源名（connector 形）
+
 ### 分析产物
 
 **分析 (Analysis)**:
