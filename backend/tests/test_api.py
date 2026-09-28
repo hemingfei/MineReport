@@ -13,6 +13,19 @@ def test_health(api: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
+def test_config_requires_login(api: TestClient) -> None:
+    assert api.get("/api/config").status_code == 401
+
+
+def test_config_allow_reader_download_flag(api: TestClient, make_user, login, tweak_settings) -> None:
+    """前端读者下载按钮的开关来源：默认关，ALLOW_READER_DOWNLOAD 放开时开。"""
+    cookies = login(make_user(Role.READER))
+    assert api.get("/api/config", cookies=cookies).json() == {"allow_reader_download": False}
+
+    tweak_settings(allow_reader_download=True)
+    assert api.get("/api/config", cookies=cookies).json() == {"allow_reader_download": True}
+
+
 def test_task_roundtrip_poll_semantics(api: TestClient, make_user, login, sample_pdf) -> None:
     """上传建任务 → worker 消费 → 轮询可见状态流转（spec：异步任务一律轮询）。"""
     from app import worker

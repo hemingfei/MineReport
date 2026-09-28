@@ -12,3 +12,9 @@ data/
 
 # Node（前端票加入后）
 node_modules/
+
+# Playwright MCP 会话产物
+.playwright-mcp/
+
+# tsc 增量缓存
+*.tsbuildinfo
