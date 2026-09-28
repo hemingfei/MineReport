@@ -38,9 +38,6 @@ from .models import (
 )
 from .targets import valid_code
 
-# 当前版关联谓词：题材浏览/研报过滤/覆盖查询共用（重跑换版后旧关联不计）
-CURRENT_ANALYSIS_LINK = (ReportTheme.analysis_id == ResearchReport.current_analysis_id)
-
 
 class ThemeStatus:
     PENDING = "pending"

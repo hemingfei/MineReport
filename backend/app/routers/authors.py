@@ -26,7 +26,6 @@ from ..models import (
     Theme,
     User,
 )
-from ..themes import CURRENT_ANALYSIS_LINK
 
 router = APIRouter(prefix="/api/authors", tags=["authors"])
 
@@ -69,8 +68,7 @@ def _current_report_ids(
 ) -> list[int]:
     conds = [
         AnalysisAuthor.name == name,
-        CURRENT_ANALYSIS_LINK,
-        ResearchReport.deleted_at.is_(None),
+        *analysis.live_current_conds(AnalysisAuthor),
     ]
     if cert:
         conds.append(AnalysisAuthor.cert == cert)
@@ -103,8 +101,7 @@ def search_authors(
         .join(ResearchReport, ResearchReport.id == AnalysisAuthor.report_id)
         .where(
             AnalysisAuthor.name.like(f"%{q}%"),
-            CURRENT_ANALYSIS_LINK,
-            ResearchReport.deleted_at.is_(None),
+            *analysis.live_current_conds(AnalysisAuthor),
         )
         .group_by(AnalysisAuthor.name, AnalysisAuthor.cert, ResearchReport.broker)
         .order_by(func.count(distinct(AnalysisAuthor.report_id)).desc())

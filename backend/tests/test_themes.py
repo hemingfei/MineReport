@@ -667,6 +667,39 @@ def test_author_search_and_coverage(api, login, make_user, llm_env, make_report)
     assert body["reports_total"] == 1
 
 
+def test_author_search_includes_reports_without_theme_links(api, login, make_user, llm_env, make_report) -> None:
+    """零题材研报的作者不消失（笛卡尔积缺陷回归）。
+
+    署名搜索的"当前版"谓词曾误用 ReportTheme 专用常量配 AnalysisAuthor 查询，
+    SQLAlchemy 隐式 FROM 把 report_themes 笛卡尔积进查询——当前分析没提取出
+    题材的研报（行业/宏观报告常见），其作者从搜索与覆盖查询中整个消失。
+    """
+    reader = make_user(Role.READER)
+    from app import analysis
+    from app.db import session_scope
+
+    raw_no_theme = json.dumps({
+        "broker": "东吴证券", "authors": [{"name": "冷门侠"}], "publish_date": None,
+        "report_type": "策略", "title": "t", "summary": "s",
+        "themes": [], "targets": [],
+        "rating": None, "risk_notes": "",
+    }, ensure_ascii=False)
+
+    rid, _ = make_report(_MD2, title="无题材覆盖", broker="东吴证券")
+    llm_env(make_llm([raw_no_theme]))
+    with session_scope() as s:
+        analysis.run_analysis(s, s.get(ResearchReport, rid), analysis.latest_converted_file(s, rid))
+        s.commit()
+
+    body = api.get("/api/authors", params={"q": "冷门"}, cookies=login(reader)).json()
+    assert [(i["name"], i["report_count"]) for i in body["items"]] == [("冷门侠", 1)]
+
+    body = api.get("/api/authors/coverage", params={"name": "冷门侠"},
+                   cookies=login(reader)).json()
+    assert body["reports_total"] == 1
+    assert body["themes"] == [] and body["targets"] == []
+
+
 # ---------- worker：import_themes 任务 ----------
 
 
