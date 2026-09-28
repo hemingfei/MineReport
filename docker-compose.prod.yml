@@ -1,0 +1,87 @@
+# 部署编排：与 docker-compose.yml（开发/本机构建）同构，api/worker/frontend 不再 build，
+# 改拉 CI 发布的 registry 镜像。发版流程见 README「镜像发布与升级」。
+#
+# 首次部署：
+#   docker compose -f docker-compose.prod.yml up -d
+# 升级到指定版本（默认 latest）：
+#   MINEREPORT_VERSION=v0.1.0 docker compose -f docker-compose.prod.yml pull
+#   MINEREPORT_VERSION=v0.1.0 docker compose -f docker-compose.prod.yml up -d
+# GHCR 包为 private 时须先 `docker login ghcr.io`（详见 README）。
+
+name: minereport-prod
+
+services:
+  postgres:
+    image: abcfy2/zhparser:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: minereport
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d minereport"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: ghcr.io/hemingfei/minereport-backend:${MINEREPORT_VERSION:-latest}
+    command: ["api"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/minereport
+      STORAGE_ROOT: /data/files
+      ALLOW_READER_DOWNLOAD: ${ALLOW_READER_DOWNLOAD:-false}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # API 容器只做就绪判定（reanalyze 的 503 闸），实际调用在 worker；两处同源
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      # 连接器凭据只从环境变量读取（spec：源码/示例/测试不落可用凭据字面量）；
+      # API 容器的手动下载/额度提示与 worker 的订阅调度同源
+      FXBAOGAO_API_KEY: ${FXBAOGAO_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - filedata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/hemingfei/minereport-backend:${MINEREPORT_VERSION:-latest}
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/minereport
+      STORAGE_ROOT: /data/files
+      WORKER_ID: worker-1
+      # 分析管道凭据只从环境变量读取（spec：源码/示例/测试不落可用凭据字面量）
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      # 订阅调度（fxbaogao 连接器）凭据，同上仅环境变量
+      FXBAOGAO_API_KEY: ${FXBAOGAO_API_KEY:-}
+    volumes:
+      - filedata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/hemingfei/minereport-frontend:${MINEREPORT_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  filedata:

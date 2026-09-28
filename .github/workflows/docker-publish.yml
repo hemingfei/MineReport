@@ -1,0 +1,298 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+
+env:
+  GHCR_IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/minereport-backend
+  GHCR_IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/minereport-frontend
+
+# 供应链加固：CI 无写仓库权限；发布作业单独放开 packages:write
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+    steps:
+      # actions 均按 commit SHA 固定，防止上游 tag 被替换；审阅通过后逐项验证再升级
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: detect
+        name: 按路径决定测试车道
+        run: |
+          set -euo pipefail
+          backend=false
+          frontend=false
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            backend=true
+            frontend=true
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -z "${BEFORE}" || "${BEFORE}" == "0000000000000000000000000000000000000000" ]]; then
+              backend=true
+              frontend=true
+            else
+              if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+                git fetch --depth=1 origin "${BEFORE}"
+              fi
+              while IFS= read -r file; do
+                case "${file}" in
+                  backend/*)
+                    backend=true
+                    ;;
+                  frontend/*)
+                    frontend=true
+                    ;;
+                  # 后端测试经 compose 起 postgres，compose 变更须重跑后端车道
+                  docker-compose.yml)
+                    backend=true
+                    ;;
+                  .github/workflows/docker-publish.yml)
+                    backend=true
+                    frontend=true
+                    ;;
+                esac
+              done < <(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")
+            fi
+          fi
+          echo "backend=${backend}" >> "${GITHUB_OUTPUT}"
+          echo "frontend=${frontend}" >> "${GITHUB_OUTPUT}"
+
+  test-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: 起 postgres（zhparser；conftest 测试库建在同一实例）
+        run: docker compose -f docker-compose.yml up -d --wait postgres
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: 安装依赖并跑测试
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run pytest -q
+
+  test-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: 测试 + 构建（tsc -b 前置，构建错误在测试车道暴露而非 tag 发布时）
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  # 保留 job 名 test，避免打断分支保护。跳过的车道不算失败。
+  test:
+    needs: [changes, test-backend, test-frontend]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: 汇总测试结果
+        run: |
+          set -euo pipefail
+          changes="${{ needs.changes.result }}"
+          be="${{ needs.test-backend.result }}"
+          fe="${{ needs.test-frontend.result }}"
+          echo "changes=${changes} backend=${be} frontend=${fe}"
+          [[ "${changes}" == success ]]
+          for result in "${be}" "${fe}"; do
+            if [[ "${result}" == failure || "${result}" == cancelled ]]; then
+              exit 1
+            fi
+          done
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            [[ "${be}" == success && "${fe}" == success ]]
+          fi
+
+  # VPS 只拉 amd64。tag 先推单架构版本 tag / latest，不必等 arm64。
+  publish-amd64:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: 登录 GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 登录 Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 镜像 tags
+        id: meta
+        run: |
+          {
+            echo "backend<<EOF"
+            echo "${GHCR_IMAGE_BACKEND}:${GITHUB_REF_NAME}"
+            echo "${GHCR_IMAGE_BACKEND}:latest"
+            if [ -n "${DOCKERHUB_USERNAME}" ]; then
+              echo "${DOCKERHUB_USERNAME}/minereport-backend:${GITHUB_REF_NAME}"
+              echo "${DOCKERHUB_USERNAME}/minereport-backend:latest"
+            fi
+            echo "EOF"
+            echo "frontend<<EOF"
+            echo "${GHCR_IMAGE_FRONTEND}:${GITHUB_REF_NAME}"
+            echo "${GHCR_IMAGE_FRONTEND}:latest"
+            if [ -n "${DOCKERHUB_USERNAME}" ]; then
+              echo "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}"
+              echo "${DOCKERHUB_USERNAME}/minereport-frontend:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: 构建并推送 backend（amd64）
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.backend }}
+          cache-from: type=gha,scope=backend-amd64
+          cache-to: type=gha,mode=max,scope=backend-amd64
+      - name: 构建并推送 frontend（amd64）
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./frontend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.frontend }}
+          cache-from: type=gha,scope=frontend-amd64
+          cache-to: type=gha,mode=max,scope=frontend-amd64
+
+  # arm64 后台交叉编译，合并进同一 version / latest 清单。失败不影响已上线的 amd64。
+  publish-arm64:
+    needs: publish-amd64
+    if: startsWith(github.ref, 'refs/tags/v') && needs.publish-amd64.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: 设置 QEMU（arm64 交叉构建）
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: 登录 GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 登录 Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 镜像 tags
+        id: meta
+        run: |
+          {
+            echo "backend<<EOF"
+            echo "${GHCR_IMAGE_BACKEND}:${GITHUB_REF_NAME}-arm64"
+            if [ -n "${DOCKERHUB_USERNAME}" ]; then
+              echo "${DOCKERHUB_USERNAME}/minereport-backend:${GITHUB_REF_NAME}-arm64"
+            fi
+            echo "EOF"
+            echo "frontend<<EOF"
+            echo "${GHCR_IMAGE_FRONTEND}:${GITHUB_REF_NAME}-arm64"
+            if [ -n "${DOCKERHUB_USERNAME}" ]; then
+              echo "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}-arm64"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: 构建并推送 frontend（arm64）
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./frontend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.frontend }}
+          cache-from: type=gha,scope=frontend-arm64
+          cache-to: type=gha,mode=max,scope=frontend-arm64
+      - name: 构建并推送 backend（arm64）
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./backend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.backend }}
+          cache-from: type=gha,scope=backend-arm64
+          cache-to: type=gha,mode=max,scope=backend-arm64
+      - name: 合并 backend 多架构清单
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${GHCR_IMAGE_BACKEND}:${GITHUB_REF_NAME}" \
+            -t "${GHCR_IMAGE_BACKEND}:latest" \
+            "${GHCR_IMAGE_BACKEND}:${GITHUB_REF_NAME}" \
+            "${GHCR_IMAGE_BACKEND}:${GITHUB_REF_NAME}-arm64"
+          if [ -n "${DOCKERHUB_USERNAME}" ]; then
+            docker buildx imagetools create \
+              -t "${DOCKERHUB_USERNAME}/minereport-backend:${GITHUB_REF_NAME}" \
+              -t "${DOCKERHUB_USERNAME}/minereport-backend:latest" \
+              "${DOCKERHUB_USERNAME}/minereport-backend:${GITHUB_REF_NAME}" \
+              "${DOCKERHUB_USERNAME}/minereport-backend:${GITHUB_REF_NAME}-arm64"
+          fi
+      - name: 合并 frontend 多架构清单
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${GHCR_IMAGE_FRONTEND}:${GITHUB_REF_NAME}" \
+            -t "${GHCR_IMAGE_FRONTEND}:latest" \
+            "${GHCR_IMAGE_FRONTEND}:${GITHUB_REF_NAME}" \
+            "${GHCR_IMAGE_FRONTEND}:${GITHUB_REF_NAME}-arm64"
+          if [ -n "${DOCKERHUB_USERNAME}" ]; then
+            docker buildx imagetools create \
+              -t "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}" \
+              -t "${DOCKERHUB_USERNAME}/minereport-frontend:latest" \
+              "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}" \
+              "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}-arm64"
+          fi
