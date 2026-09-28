@@ -55,7 +55,7 @@ class Task(Base):
     claimed_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        comment="最近一次被领取的时间（租约；converting 超时视为遗弃可重新领取）",
+        comment="最近一次被领取的时间（租约；在途状态超时视为遗弃可重新领取）",
     )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

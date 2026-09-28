@@ -62,6 +62,32 @@ uv run pytest
 
 测试基座（spec Testing Decisions）：HTTP API 层为主缝合口，FastAPI TestClient + 真实 Postgres 测试库（`minereport_test`，会话级建库→迁移→跑→清理，可重复执行）。
 
+## 镜像发布与升级
+
+CI（[docker-publish.yml](.github/workflows/docker-publish.yml)）：push main 只跑受影响车道的测试；**打 `v*` tag 触发全量测试 → 构建发布** backend/frontend 双镜像到 GHCR 与 Docker Hub（amd64 先推、arm64 后台补齐合并进同一多架构清单）：
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+镜像（`v0.1.0` 与 `latest` 两个 tag）：
+
+- `ghcr.io/hemingfei/minereport-backend` / `ghcr.io/hemingfei/minereport-frontend`（api/worker 共用 backend 镜像，入口脚本区分）
+- Docker Hub 同名：`hemingfei/minereport-backend` / `hemingfei/minereport-frontend`
+
+服务器部署/升级（[docker-compose.prod.yml](docker-compose.prod.yml)，与开发 compose 同构、镜像改拉 registry）：
+
+```bash
+# 首次部署（.env 配好 POSTGRES_PASSWORD / BOOTSTRAP_ADMIN_* / LLM_* / FXBAOGAO_API_KEY）
+docker compose -f docker-compose.prod.yml up -d
+
+# 升级到指定版本（默认 latest）
+MINEREPORT_VERSION=v0.1.0 docker compose -f docker-compose.prod.yml pull
+MINEREPORT_VERSION=v0.1.0 docker compose -f docker-compose.prod.yml up -d
+```
+
+> GHCR 首次发布后包默认 private：到 GitHub 个人页 → Packages → 对应包 → Package settings 改 public 后可匿名拉取；否则部署机须 `docker login ghcr.io`。
+
 ## 配置
 
 全部配置经环境变量注入（`backend/app/config.py`），凭据不落源码：
@@ -84,4 +110,5 @@ backend/           FastAPI + worker（共享 Postgres 任务表）
   postgres/init/   postgres 首启初始化 SQL（zhparser + zhcfg）
   tests/           pytest（真实 PG 测试库）
 docker-compose.yml api / worker / postgres 三服务编排
+docker-compose.prod.yml 部署编排（拉 CI 发布的 registry 镜像）
 ```
