@@ -176,6 +176,8 @@ export interface ThemeSummary {
   created_at: string;
   report_count: number;
   member_count: number;
+  /** 题材最新综合分析（仅详情接口填充；生成/刷新走 /api/syntheses） */
+  latest_synthesis?: { id: number; version: number; created_at: string } | null;
 }
 
 export interface ThemeList {
@@ -360,6 +362,71 @@ export interface ConnectorQuota {
   hints: Record<string, string>;
 }
 
+// ---------- syntheses（#20：题材跨报告综合分析） ----------
+
+/** 结论/分歧点条目：report_refs 是输入材料序位（1 起始），映射 evidence.reports 序位 */
+export interface SynthesisConclusion {
+  text: string;
+  report_refs: number[];
+}
+
+export interface SynthesisConsensusTarget {
+  name: string;
+  code: string | null;
+  view: string;
+  report_refs: number[];
+}
+
+export interface SynthesisResult {
+  common_conclusions: SynthesisConclusion[];
+  consensus_targets: SynthesisConsensusTarget[];
+  divergences: SynthesisConclusion[];
+  input_total: number;
+  truncated: boolean;
+}
+
+/** 证据边界研报条目（序位 = 引用编号，点击回链研报详情） */
+export interface SynthesisReportRef {
+  id: number;
+  title: string;
+  broker: string;
+  publish_date: string;
+}
+
+export interface SynthesisVersionRef {
+  id: number;
+  version: number;
+  created_at: string;
+}
+
+export interface SynthesisDetail {
+  id: number;
+  theme_id: number;
+  theme_name: string;
+  version: number;
+  input_fingerprint: string;
+  report_ids: number[];
+  prompt_version: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  duration_ms: number;
+  result: SynthesisResult;
+  created_by: number;
+  created_at: string;
+  versions: SynthesisVersionRef[];
+  reports: SynthesisReportRef[];
+}
+
+/** POST /api/syntheses 响应：cached=true 命中缓存（200）；否则 202 + task 轮询 */
+export interface SynthesisCreated {
+  cached: boolean;
+  synthesis_id: number | null;
+  version: number | null;
+  task_id: number | null;
+  report_count: number;
+}
+
 /** 会话失效（401）时广播，AuthProvider 监听后清空登录态。 */
 export const UNAUTHORIZED_EVENT = "mr:unauthorized";
 
@@ -536,6 +603,23 @@ export const api = {
 
   /** 触发题材种子导入（admin，幂等）：东财概念 + 申万二级骨架 */
   importThemes: () => request<{ task_id: number }>("/api/themes/import", { method: "POST", body: "{}" }),
+
+  // ---------- syntheses（#20） ----------
+
+  /** 一键生成：输入指纹未变命中缓存（cached=true 直接跳结果页）；变了走任务轮询（同输入在途任务复用） */
+  createSynthesis: (themeId: number) =>
+    request<SynthesisCreated>("/api/syntheses", {
+      method: "POST",
+      body: JSON.stringify({ theme_id: themeId }),
+    }),
+
+  getSynthesis: (id: number) => request<SynthesisDetail>(`/api/syntheses/${id}`),
+
+  /** 手动刷新：强制重算 version++，纳入刷新时点的最新研报集合 */
+  refreshSynthesis: (id: number) =>
+    request<{ task_id: number; synthesis_id: number; report_count: number }>(`/api/syntheses/${id}/refresh`, {
+      method: "POST",
+    }),
 
   // ---------- authors（#17：覆盖查询） ----------
 

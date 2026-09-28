@@ -10,6 +10,9 @@ reanalyze/批量重跑产生独立 analyze 任务（跳过转换，直接分析�
 
 订阅调度（#19）：main() 里另起 APScheduler 定时扫 due 订阅（连接器拉取/去重/退避
 编排见 app/scheduler.py）；调度与任务轮询互不阻塞，重启各自恢复。
+
+综合分析（#20）：synthesize 任务按 POST 时点的快照研报集合跑题材二次分析
+（缓存判据在入队时完成；LLM 编排见 app/synthesis.py）。
 """
 
 import datetime as dt
@@ -19,7 +22,7 @@ from typing import Callable
 
 from sqlalchemy import and_, case, func, or_, select, update
 
-from . import analysis, db, masterdata, search, themes
+from . import analysis, db, masterdata, search, synthesis, themes
 from .config import get_settings
 from .conversion import (
     ConversionError,
@@ -28,7 +31,7 @@ from .conversion import (
     preflight_pdf,
 )
 from .errors import AnalysisError, MasterDataError
-from .models import ReportFile, ResearchReport, Task, TaskStatus
+from .models import ReportFile, ResearchReport, Task, TaskStatus, Theme
 from .storage import get_storage
 
 log = logging.getLogger("minereport.worker")
@@ -38,10 +41,9 @@ def claim_next_task() -> Task | None:
     """领取下一待处理任务（单条 UPDATE ... RETURNING 原子完成）。
 
     子查询 FOR UPDATE SKIP LOCKED：并发 worker 争抢时直接跳过已锁行取下一条，
-    且锁释放后 EvalPlanQual 复检状态条件，不会重领已被改走状态的行；
     外层再挂一份状态复查兜底。CONVERTING/ANALYZING 超过租约（claimed_at 过旧）
     的任务视为 worker 遗弃，可重新领取；领取时按任务类型写入正确的在途状态
-    （convert → converting，analyze → analyzing）。
+    （convert → converting；analyze/synthesize → analyzing）。
     """
     s = get_settings()
     lease_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=s.worker_lease_seconds)
@@ -64,7 +66,7 @@ def claim_next_task() -> Task | None:
             .where(Task.id == candidate, eligible)
             .values(
                 status=case(
-                    (Task.kind == "analyze", TaskStatus.ANALYZING),
+                    (Task.kind.in_(("analyze", "synthesize")), TaskStatus.ANALYZING),
                     else_=TaskStatus.CONVERTING,
                 ),
                 attempts=Task.attempts + 1,
@@ -255,6 +257,49 @@ def handle_analyze(task_id: int) -> None:
 
 
 HANDLERS["analyze"] = handle_analyze
+
+
+# ---------- synthesize：综合分析（#20） ----------
+
+def handle_synthesize(task_id: int) -> None:
+    """按 POST 时点的快照研报集合跑题材综合分析（缓存判据已在入队时完成）。
+
+    题材在排队期间被合并/停用即失败（关联语义已变，重走 POST 重新选集；
+    判据与 API 共用 synthesis.theme_unavailable_reason）；快照成员的可用性
+    校验与证据边界记录见 synthesis.run_synthesis。"""
+    with db.SessionLocal() as session:
+        task = session.get(Task, task_id)
+        payload = dict(task.payload or {})
+        theme = session.get(Theme, payload["theme_id"])
+        if theme is None:
+            raise AnalysisError(
+                "theme_unavailable", f"题材 {payload['theme_id']} 不存在，请重新发起"
+            )
+        if reason := synthesis.theme_unavailable_reason(theme):
+            raise AnalysisError("theme_unavailable", f"{reason}，请重新发起")
+        report_ids: list[int] = payload["report_ids"]
+
+        task.status = TaskStatus.ANALYZING
+        session.commit()
+        row = synthesis.run_synthesis(
+            session,
+            theme,
+            report_ids,
+            created_by=payload["triggered_by"],
+            input_total=int(payload.get("input_total") or len(report_ids)),
+        )
+        task.status = TaskStatus.DONE
+        task.result = {
+            "synthesis_id": row.id,
+            "theme_id": theme.id,
+            "version": row.version,
+            "report_count": len(row.report_ids or []),
+            "input_fingerprint": row.input_fingerprint,
+        }
+        session.commit()
+
+
+HANDLERS["synthesize"] = handle_synthesize
 
 
 # ---------- import_targets：标的主数据全量导入（#16） ----------

@@ -5,7 +5,8 @@ Target/TargetIndustryHistory/TargetMatch/AnalysisTarget 支撑标的主数据、
 人工确认队列（#16）；Theme/ReportTheme/ThemeMembership/AnalysisAuthor 支撑题材受控
 词表治理、研报/标的关联与分析师覆盖查询（#17）；search_vector 支撑中文全文检索（#18）；
 Subscription/ExternalRef/ConnectorRun 支撑连接器订阅调度：查询展开、双重去重、
-退避重试与死信告警（#19）。"""
+退避重试与死信告警（#19）；Synthesis 支撑题材跨报告综合分析：输入指纹缓存、
+手动刷新版本链与证据边界（#20）。"""
 
 import datetime as dt
 from typing import Any
@@ -456,6 +457,39 @@ class AnalysisAuthor(Base):
     seq: Mapped[int] = mapped_column(Integer, comment="在 result.authors 中的序位")
     name: Mapped[str] = mapped_column(String(128), comment="LLM 提取的署名原文")
     cert: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="执业证书号（可缺）")
+
+
+class Synthesis(Base):
+    """题材跨报告综合分析（#20）：共性结论/共识标的/分歧点，结论带原文引用回链。
+
+    身份 = 输入集合哈希指纹 + 版本号（spec 数据模型；一期输入仅 theme_id，
+    (theme_id, version) 唯一即身份落库）。input_fingerprint 是题材下研报 id
+    集合的 sha256——POST 时比对最新版指纹，未变即命中缓存不重算；手动刷新
+    强制重算并 version++（题材词表变更不自动失效，刷新按钮兜底）。
+    report_ids 记录本版实际输入研报（证据边界，序位即引用编号 R1..Rn），
+    每条结论的 report_refs 指向该序位，可回链研报正文。
+    """
+
+    __tablename__ = "syntheses"
+    __table_args__ = (Index("uq_syntheses_theme_version", "theme_id", "version", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, comment="版本号，从 1 递增（手动刷新即 ++）")
+    input_fingerprint: Mapped[str] = mapped_column(
+        String(64), comment="输入研报 id 集合的 sha256（缓存命中判据）"
+    )
+    report_ids: Mapped[list] = mapped_column(JSON, comment="输入研报 id 集合（证据边界，序位 = 引用编号）")
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_tokens: Mapped[int] = mapped_column(Integer)
+    completion_tokens: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    result: Mapped[dict] = mapped_column(JSON, comment="共性结论/共识标的/分歧点 + 输入规模元信息")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Subscription(Base):

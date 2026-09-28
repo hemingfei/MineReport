@@ -853,6 +853,22 @@ select:focus {
   margin: 1.6em 0;
 }
 
+/* ---------- 综合分析结果页（#20） ---------- */
+
+.synthesis-item {
+  margin-bottom: 10px;
+}
+
+.synthesis-item .chip {
+  margin-right: 6px;
+  text-decoration: none;
+}
+
+.synthesis-item .chip:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 900px) {

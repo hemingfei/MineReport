@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..auth import require_role
 from ..db import get_db
+from .. import synthesis
 from ..models import (
     ReportTheme,
     ResearchReport,
@@ -42,6 +43,14 @@ from ..themes import (
 router = APIRouter(prefix="/api/themes", tags=["themes"])
 
 
+class ThemeLatestSynthesis(BaseModel):
+    """题材最新综合分析引用（详情页入口；生成/刷新走 /api/syntheses）。"""
+
+    id: int
+    version: int
+    created_at: dt.datetime
+
+
 class ThemeOut(BaseModel):
     id: int
     name: str
@@ -54,6 +63,7 @@ class ThemeOut(BaseModel):
     created_at: dt.datetime
     report_count: int = 0
     member_count: int = 0
+    latest_synthesis: ThemeLatestSynthesis | None = None  # 仅详情填充（列表免 N+1）
 
 
 class ThemeListOut(BaseModel):
@@ -277,7 +287,13 @@ def get_theme(
 ) -> ThemeOut:
     theme = _get_theme(db, theme_id)
     report_counts, member_counts = _counts_by_theme(db)
-    return _theme_out(theme, report_counts, member_counts)
+    out = _theme_out(theme, report_counts, member_counts)
+    latest = synthesis.latest_for_theme(db, theme.id)
+    if latest is not None:
+        out.latest_synthesis = ThemeLatestSynthesis(
+            id=latest.id, version=latest.version, created_at=latest.created_at
+        )
+    return out
 
 
 @router.get("/{theme_id}/reports", response_model=ThemeReportListOut)

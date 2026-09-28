@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
   humanizeError,
+  ROLE_RANK,
   THEME_SOURCE_LABEL,
   THEME_STATUS_LABEL,
   themeStatusChipClass,
@@ -10,15 +11,18 @@ import {
   type ThemeReportList,
   type ThemeSummary,
 } from "../api";
-import { formatDate } from "../format";
+import { useAuth } from "../auth";
+import { formatDate, formatDateTime } from "../format";
+import { TASK_STATUS_LABEL, useTaskPolling } from "../task";
 
 const REPORT_PAGE_SIZE = 20;
 
-/** 题材浏览页：题材全貌 = 题材下研报列表 + 标的池（spec 用户故事 14）。 */
+/** 题材浏览页：题材全貌 = 题材下研报列表 + 标的池（spec 用户故事 14）+ 综合分析入口（#20）。 */
 export function ThemeDetailPage() {
   const { id } = useParams();
   const themeId = Number(id);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [theme, setTheme] = useState<ThemeSummary | null>(null);
   const [reports, setReports] = useState<ThemeReportList | null>(null);
@@ -26,6 +30,9 @@ export function ThemeDetailPage() {
   const [activeOnly, setActiveOnly] = useState(true);
   const [reportPage, setReportPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genTaskId, setGenTaskId] = useState<number | null>(null);
+  const { task: genTask } = useTaskPolling(genTaskId);
 
   useEffect(() => {
     if (!Number.isFinite(themeId)) return;
@@ -50,11 +57,39 @@ export function ThemeDetailPage() {
     };
   }, [themeId, reportPage, activeOnly]);
 
+  // 生成任务终态：成功跳结果页；失败亮错误（缓存命中在点击时直接跳转）
+  useEffect(() => {
+    if (genTask == null) return;
+    if (genTask.status === "done") {
+      const sid = Number(genTask.result?.synthesis_id ?? 0);
+      setGenTaskId(null);
+      if (sid > 0) navigate(`/syntheses/${sid}`);
+    } else if (genTask.status === "failed") {
+      setGenTaskId(null);
+      setGenError(
+        `${genTask.result?.error_code ?? "failed"}：${genTask.result?.error ?? "生成失败，请重试"}`,
+      );
+    }
+  }, [genTask, navigate]);
+
   if (!Number.isFinite(themeId)) {
     return <p className="form-error">无效的题材 id</p>;
   }
   if (error) return <p className="form-error">{error}</p>;
   if (!theme || !reports || !members) return <div className="page-loading">加载中…</div>;
+
+  const canGenerate = user != null && ROLE_RANK[user.role] >= ROLE_RANK.analyst;
+
+  const onGenerate = () => {
+    setGenError(null);
+    api
+      .createSynthesis(themeId)
+      .then((out) => {
+        if (out.cached && out.synthesis_id != null) navigate(`/syntheses/${out.synthesis_id}`);
+        else if (out.task_id != null) setGenTaskId(out.task_id);
+      })
+      .catch((e) => setGenError(humanizeError(e, "生成综合分析失败")));
+  };
 
   const totalReportPages = Math.max(1, Math.ceil(reports.total / REPORT_PAGE_SIZE));
 
@@ -83,6 +118,36 @@ export function ThemeDetailPage() {
             <Link to={`/themes/${theme.merged_into_id}`}>#{theme.merged_into_id}</Link>
           </p>
         )}
+        <p className="hint">
+          {theme.latest_synthesis != null ? (
+            <>
+              最新综合分析{" "}
+              <Link to={`/syntheses/${theme.latest_synthesis.id}`}>
+                v{theme.latest_synthesis.version}
+              </Link>
+              （{formatDateTime(theme.latest_synthesis.created_at)}）
+            </>
+          ) : (
+            "尚无综合分析"
+          )}
+          {canGenerate && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onGenerate}
+              disabled={genTaskId != null}
+              style={{ marginLeft: 12 }}
+              title="输入未变时命中缓存直接查看；重算请到结果页手动刷新"
+            >
+              {genTaskId != null
+                ? `生成中（${TASK_STATUS_LABEL[genTask?.status ?? "uploaded"]}）`
+                : theme.latest_synthesis != null
+                  ? "查看/重生成综合分析"
+                  : "生成综合分析"}
+            </button>
+          )}
+        </p>
+        {genError && <p className="form-error">{genError}</p>}
       </div>
 
       <h2 className="section-title">题材下研报（{reports.total}）</h2>

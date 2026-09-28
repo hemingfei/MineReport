@@ -6,6 +6,7 @@ export { RegisterPage } from "./RegisterPage";
 export { ReportDetailPage } from "./ReportDetailPage";
 export { ReportsPage } from "./ReportsPage";
 export { SubscriptionsPage } from "./SubscriptionsPage";
+export { SynthesisPage } from "./SynthesisPage";
 export { TargetQueuePage } from "./TargetQueuePage";
 export { ThemeDetailPage } from "./ThemeDetailPage";
 export { ThemesPage } from "./ThemesPage";

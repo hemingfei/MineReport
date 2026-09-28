@@ -15,6 +15,7 @@ import {
   TargetQueuePage,
   ThemeDetailPage,
   ThemesPage,
+  SynthesisPage,
   UploadPage,
 } from "./pages";
 import "./styles.css";
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
       { path: "reports/:id", element: <ReportDetailPage /> },
       { path: "themes", element: <ThemesPage /> },
       { path: "themes/:id", element: <ThemeDetailPage /> },
+      { path: "syntheses/:id", element: <SynthesisPage /> },
       {
         path: "targets",
         element: (

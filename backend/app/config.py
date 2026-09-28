@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     analysis_chunk_overlap: int = 1_000
     analysis_head_chars: int = 3_000  # publish_date 正则锚定的"首页"窗口
 
+    # 综合分析（#20）。输入按发布日期取最近 N 篇（token 闸门），超出截断并记元信息
+    synthesis_max_reports: int = 60
+
     # 连接器与订阅调度（#19）。凭据仅环境变量（FXBAOGAO_API_KEY），源码无字面量
     fxbaogao_api_key: str = ""
     fxbaogao_api_base: str = "https://api.fxbaogao.com"
