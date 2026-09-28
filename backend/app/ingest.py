@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session as OrmSession
 
 from . import search
 from .conversion import normalize_title
-from .models import ReportFile, ResearchReport, Task, TaskStatus
+from .models import ReportFile, ResearchReport, Task
 from .storage import Storage, get_storage
+from .worker import enqueue
 
 
 def find_active_by_identity(
@@ -92,11 +93,6 @@ def ingest_report_file(
     file_row.storage_key = f"reports/{report.id}/files/{file_row.id}/{filename}"
     (storage or get_storage()).put(file_row.storage_key, data)
 
-    task = Task(
-        kind="convert",
-        status=TaskStatus.UPLOADED,
-        payload={"report_id": report.id, "report_file_id": file_row.id},
-    )
-    db.add(task)
+    task = enqueue(db, "convert", {"report_id": report.id, "report_file_id": file_row.id})
     search.refresh_search_vector(db, report.id)  # 建档即索引标题（正文/总结随转换/分析补）
     return report, file_row, task, merged

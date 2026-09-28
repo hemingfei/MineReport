@@ -40,11 +40,10 @@ from ..models import (
     Tag,
     Target as TargetRow,
     TargetMatch,
-    Task,
-    TaskStatus,
     User,
 )
 from ..storage import get_storage
+from ..worker import enqueue
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -448,16 +447,11 @@ def reanalyze_report(
     """单篇重跑：新起 analyze 任务（版本链 version++），不动转换产物。"""
     report = _get_active_report(db, report_id)
     file = _require_analysis_ready(db, report)
-    task = Task(
-        kind="analyze",
-        status=TaskStatus.UPLOADED,
-        payload={
-            "report_id": report.id,
-            "report_file_id": file.id,
-            "triggered_by": user.id,
-        },
+    task = enqueue(
+        db,
+        "analyze",
+        {"report_id": report.id, "report_file_id": file.id, "triggered_by": user.id},
     )
-    db.add(task)
     db.commit()
     return ReanalyzeOut(task_id=task.id, report_id=report.id, report_file_id=file.id)
 
@@ -486,17 +480,16 @@ def batch_reanalyze(
             skipped.append({"report_id": report_id, "reason": reason})
             continue
         assert file is not None
-        task = Task(
-            kind="analyze",
-            status=TaskStatus.UPLOADED,
-            payload={
+        task = enqueue(
+            db,
+            "analyze",
+            {
                 "report_id": report.id,
                 "report_file_id": file.id,
                 "triggered_by": user.id,
                 "batch": True,
             },
         )
-        db.add(task)
         db.flush()
         tasks.append(
             ReanalyzeOut(task_id=task.id, report_id=report.id, report_file_id=file.id)

@@ -25,8 +25,6 @@ from ..models import (
     ReportTheme,
     ResearchReport,
     Role,
-    Task,
-    TaskStatus,
     Target as TargetRow,
     Theme,
     ThemeMembership,
@@ -39,6 +37,7 @@ from ..themes import (
     propose_theme,
     retire_theme,
 )
+from ..worker import enqueue
 
 router = APIRouter(prefix="/api/themes", tags=["themes"])
 
@@ -237,12 +236,7 @@ def trigger_theme_import(
     db: OrmSession = Depends(get_db),
 ) -> ImportOut:
     """触发题材种子导入（幂等）：东财概念（滤噪音）+ 申万二级骨架，成分股作 seed 成员。"""
-    task = Task(
-        kind="import_themes",
-        status=TaskStatus.UPLOADED,
-        payload={"triggered_by": user.id},
-    )
-    db.add(task)
+    task = enqueue(db, "import_themes", {"triggered_by": user.id})
     db.commit()
     return ImportOut(task_id=task.id)
 

@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session as OrmSession
 from .. import analysis, synthesis
 from ..auth import require_role
 from ..db import get_db
-from ..models import ResearchReport, Role, Synthesis, Task, TaskStatus, Theme, User
+from ..models import ResearchReport, Role, Synthesis, Task, Theme, User
+from ..worker import enqueue
 
 router = APIRouter(prefix="/api/syntheses", tags=["syntheses"])
 
@@ -121,10 +122,10 @@ def _enqueue(
     existing = synthesis.inflight_task(db, theme.id, report_ids)
     if existing is not None:
         return existing
-    task = Task(
-        kind="synthesize",
-        status=TaskStatus.UPLOADED,
-        payload={
+    task = enqueue(
+        db,
+        "synthesize",
+        {
             "theme_id": theme.id,
             "report_ids": report_ids,
             "input_total": input_total,
@@ -132,7 +133,6 @@ def _enqueue(
             "triggered_by": user.id,
         },
     )
-    db.add(task)
     db.flush()
     return task
 

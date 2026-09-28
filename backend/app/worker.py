@@ -18,9 +18,10 @@ reanalyze/批量重跑产生独立 analyze 任务（跳过转换，直接分析�
 import datetime as dt
 import logging
 import time
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy.orm import Session as OrmSession
 
 from . import analysis, db, masterdata, search, synthesis, themes
 from .config import get_settings
@@ -37,17 +38,48 @@ from .storage import get_storage
 log = logging.getLogger("minereport.worker")
 
 
+# ---------- 任务注册表与入队口 ----------
+
+
+class TaskSpec(NamedTuple):
+    """kind 注册项：处理器 + 领取后进入的在途状态（兼任租约标记）。
+
+    新增任务类型只改这里：入队校验、claim 的状态写入与租约恢复集合
+    全部由本注册表渲染，别处不再持有 kind 词表。
+    """
+
+    handler: Callable[[int], None]
+    inflight_status: str
+
+
+HANDLERS: dict[str, TaskSpec] = {}
+
+
+def enqueue(session: OrmSession, kind: str, payload: dict | None = None) -> Task:
+    """唯一入队口：校验 kind 已注册后落 UPLOADED 任务（不 commit，调用方决定时机）。"""
+    if kind not in HANDLERS:
+        raise ValueError(f"unregistered task kind {kind!r}")
+    task = Task(kind=kind, status=TaskStatus.UPLOADED, payload=payload)
+    session.add(task)
+    return task
+
+
+def inflight_statuses() -> tuple[str, ...]:
+    """注册表声明的全部在途状态（去重保序）：claim 租约恢复只认这些。"""
+    return tuple(dict.fromkeys(spec.inflight_status for spec in HANDLERS.values()))
+
+
 def claim_next_task() -> Task | None:
     """领取下一待处理任务（单条 UPDATE ... RETURNING 原子完成）。
 
     子查询 FOR UPDATE SKIP LOCKED：并发 worker 争抢时直接跳过已锁行取下一条，
-    外层再挂一份状态复查兜底。CONVERTING/ANALYZING 超过租约（claimed_at 过旧）
-    的任务视为 worker 遗弃，可重新领取；领取时按任务类型写入正确的在途状态
-    （convert → converting；analyze/synthesize → analyzing）。
+    外层再挂一份状态复查兜底。在途状态超过租约（claimed_at 过旧）的任务视为
+    worker 遗弃，可重新领取；领取时按注册表（HANDLERS）声明的 inflight_status
+    写入对应状态。
     """
     s = get_settings()
     lease_cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=s.worker_lease_seconds)
-    in_flight = Task.status.in_((TaskStatus.CONVERTING, TaskStatus.ANALYZING))
+    in_flight = Task.status.in_(inflight_statuses())
     eligible = or_(
         Task.status == TaskStatus.UPLOADED,
         and_(in_flight, Task.claimed_at < lease_cutoff),
@@ -66,7 +98,7 @@ def claim_next_task() -> Task | None:
             .where(Task.id == candidate, eligible)
             .values(
                 status=case(
-                    (Task.kind.in_(("analyze", "synthesize")), TaskStatus.ANALYZING),
+                    *((Task.kind == kind, spec.inflight_status) for kind, spec in HANDLERS.items()),
                     else_=TaskStatus.CONVERTING,
                 ),
                 attempts=Task.attempts + 1,
@@ -76,11 +108,6 @@ def claim_next_task() -> Task | None:
         ).scalar_one_or_none()
         session.commit()
         return row
-
-
-# ---------- 任务处理器注册表 ----------
-
-HANDLERS: dict[str, Callable[[int], None]] = {}
 
 
 def _mark_failed(task_id: int, error_code: str, message: str, stage: str | None) -> None:
@@ -99,11 +126,11 @@ def run_once() -> Task | None:
     if task is None:
         return None
     try:
-        handler = HANDLERS.get(task.kind)
-        if handler is None:
+        spec = HANDLERS.get(task.kind)
+        if spec is None:
             _mark_failed(task.id, "unknown_kind", f"no handler for kind {task.kind!r}", None)
         else:
-            handler(task.id)
+            spec.handler(task.id)
     except ConversionError as e:
         _mark_failed(task.id, e.error_code, e.message, getattr(e, "stage", None))
     except AnalysisError as e:
@@ -220,7 +247,7 @@ def _current_stage(stages: set[str]) -> str:
     return ConvertStage.PERSIST
 
 
-HANDLERS["convert"] = handle_convert
+HANDLERS["convert"] = TaskSpec(handle_convert, TaskStatus.CONVERTING)
 
 
 # ---------- analyze：独立分析任务（reanalyze / 批量重跑） ----------
@@ -245,8 +272,6 @@ def handle_analyze(task_id: int) -> None:
             if file is None:
                 raise AnalysisError("markdown_missing", "研报尚无转换完成的文件，无法分析")
 
-        task.status = TaskStatus.ANALYZING
-        session.commit()
         a = analysis.run_analysis(session, report, file)
         task.status = TaskStatus.DONE
         task.result = {
@@ -256,7 +281,7 @@ def handle_analyze(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["analyze"] = handle_analyze
+HANDLERS["analyze"] = TaskSpec(handle_analyze, TaskStatus.ANALYZING)
 
 
 # ---------- synthesize：综合分析（#20） ----------
@@ -279,8 +304,6 @@ def handle_synthesize(task_id: int) -> None:
             raise AnalysisError("theme_unavailable", f"{reason}，请重新发起")
         report_ids: list[int] = payload["report_ids"]
 
-        task.status = TaskStatus.ANALYZING
-        session.commit()
         row = synthesis.run_synthesis(
             session,
             theme,
@@ -299,7 +322,7 @@ def handle_synthesize(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["synthesize"] = handle_synthesize
+HANDLERS["synthesize"] = TaskSpec(handle_synthesize, TaskStatus.ANALYZING)
 
 
 # ---------- import_targets：标的主数据全量导入（#16） ----------
@@ -319,7 +342,7 @@ def handle_import_targets(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["import_targets"] = handle_import_targets
+HANDLERS["import_targets"] = TaskSpec(handle_import_targets, TaskStatus.CONVERTING)
 
 
 # ---------- import_themes：题材种子导入（#17） ----------
@@ -340,7 +363,7 @@ def handle_import_themes(task_id: int) -> None:
         session.commit()
 
 
-HANDLERS["import_themes"] = handle_import_themes
+HANDLERS["import_themes"] = TaskSpec(handle_import_themes, TaskStatus.CONVERTING)
 
 
 def start_subscription_scheduler() -> "BackgroundScheduler | None":

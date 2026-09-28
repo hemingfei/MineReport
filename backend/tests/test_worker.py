@@ -28,9 +28,35 @@ def _echo_handler(db_engine):
             t.result = {"echo": t.payload}
             s.commit()
 
-    worker.HANDLERS["echo"] = _handle
+    worker.HANDLERS["echo"] = worker.TaskSpec(_handle, CONVERTING)
     yield
     worker.HANDLERS.pop("echo", None)
+
+
+def test_enqueue_rejects_unregistered_kind(db_engine) -> None:
+    """enqueue 是唯一入队口：未注册 kind 在入队时即刻拒绝，而非领取后 unknown_kind。"""
+    with session_scope() as s:
+        task = worker.enqueue(s, "echo", {"n": 1})
+        assert task.kind == "echo"
+        assert task.status == UPLOADED
+        with pytest.raises(ValueError, match="unregistered"):
+            worker.enqueue(s, "no_such_kind", {})
+
+
+def test_claim_uses_registry_inflight_status(db_engine) -> None:
+    """表驱动：每个注册 kind 领取后的在途状态与 TaskSpec 声明一致（case 由注册表渲染）。"""
+    kinds = sorted(worker.HANDLERS)  # 含 fixture 注入的 echo
+    with session_scope() as s:
+        for kind in kinds:
+            s.add(Task(kind=kind, status=UPLOADED, payload={}))
+        s.commit()
+
+    claimed: dict[str, str] = {}
+    while (task := worker.claim_next_task()) is not None:
+        claimed[task.kind] = task.status
+    assert set(claimed) == set(kinds)
+    for kind in kinds:
+        assert claimed[kind] == worker.HANDLERS[kind].inflight_status
 
 
 def test_run_once_no_task(db_engine) -> None:

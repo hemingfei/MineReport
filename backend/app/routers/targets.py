@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..auth import require_role
 from ..db import get_db
-from ..models import ResearchReport, Role, Target, TargetMatch, Task, TaskStatus, User
+from ..models import ResearchReport, Role, Target, TargetMatch, User
 from ..targets import MatchStatus, pending_matches, resolve_match
+from ..worker import enqueue
 
 router = APIRouter(prefix="/api/targets", tags=["targets"])
 
@@ -171,14 +172,13 @@ def trigger_import(
     db: OrmSession = Depends(get_db),
 ) -> ImportOut:
     """触发主数据全量导入（幂等）：worker 拉取 akshare + 申万 xls 后 upsert。"""
-    task = Task(
-        kind="import_targets",
-        status=TaskStatus.UPLOADED,
-        payload={
+    task = enqueue(
+        db,
+        "import_targets",
+        {
             "triggered_by": user.id,
             "with_name_history": bool(body and body.with_name_history),
         },
     )
-    db.add(task)
     db.commit()
     return ImportOut(task_id=task.id)
