@@ -28,6 +28,7 @@ from ..auth import require_role
 from ..config import get_settings
 from ..conversion import SUPPORTED_EXTENSIONS, normalize_title
 from ..db import get_db
+from .. import search
 from ..models import (
     Analysis,
     AnalysisTarget,
@@ -290,6 +291,7 @@ async def create_report(
         payload={"report_id": report.id, "report_file_id": file_row.id},
     )
     db.add(task)
+    search.refresh_search_vector(db, report.id)  # #18：建档即索引标题（正文/总结随转换/分析补）
     db.commit()
     return ReportCreateOut(
         task_id=task.id, report_id=report.id, file_id=file_row.id, merged=merged
@@ -298,6 +300,7 @@ async def create_report(
 
 @router.get("", response_model=ReportListOut)
 def list_reports(
+    q: str | None = None,
     broker: str | None = None,
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
@@ -307,11 +310,14 @@ def list_reports(
     user: User = Depends(require_role(Role.READER)),
     db: OrmSession = Depends(get_db),
 ) -> ReportListOut:
-    """列表：券商精确匹配 + 发布日期闭区间 + 题材（当前分析版本的词表关联，#17）
-    过滤 + limit/offset 分页。tag/标的/搜索词过滤由后续票接入。"""
+    """列表：全文搜索词（标题/正文/总结，zhparser 分词）+ 券商精确匹配 + 发布日期闭
+    区间 + 题材（当前分析版本的词表关联，#17）过滤 + limit/offset 分页，条件间可组合。
+    多个搜索词按分词结果取交集（plainto_tsquery 语义）。tag/标的过滤由后续票接入。"""
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     conds = [ResearchReport.deleted_at.is_(None)]
+    if q and q.strip():
+        conds.append(search.matches(q.strip()))
     if broker:
         conds.append(ResearchReport.broker == broker)
     if date_from:

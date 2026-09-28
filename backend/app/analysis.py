@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as OrmSession
 
+from . import search
 from .config import Settings, get_settings
 from .errors import AnalysisError
 from .llm import LLMClient, parse_llm_json
@@ -377,7 +378,8 @@ def _extract(
 
 
 def latest_converted_file(session: OrmSession, report_id: int) -> ReportFile | None:
-    """分析输入文件的选择语义：最近转换完成者（多来源文件后到优先，与 /markdown 一致）。"""
+    """分析输入文件的选择语义：最近转换完成者（多来源文件后到优先，与 /markdown 一致）。
+    search._latest_body 同语义（正文入索引口径）——改"最新"规则须两处同步。"""
     return session.scalar(
         select(ReportFile)
         .where(ReportFile.report_id == report_id, ReportFile.converted_at.is_not(None))
@@ -429,6 +431,7 @@ def run_analysis(
     session.add(analysis)
     session.flush()
     report.current_analysis_id = analysis.id
+    search.refresh_search_vector(session, report.id)  # #18：总结随版本链头指针移动入索引
     # #16 回写：标的原始串经规范化瀑布落成 analysis_targets 关联（未落成的进人工确认队列）
     link_analysis_targets(session, report, analysis)
     # #17 回写：题材关联受控词表（在册直连/未知进待审），分析师署名落 analysis_authors 投影

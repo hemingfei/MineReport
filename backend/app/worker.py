@@ -16,7 +16,7 @@ from typing import Callable
 
 from sqlalchemy import and_, case, func, or_, select, update
 
-from . import analysis, db, masterdata, themes
+from . import analysis, db, masterdata, search, themes
 from .config import get_settings
 from .conversion import (
     ConversionError,
@@ -178,6 +178,7 @@ def handle_convert(task_id: int) -> None:
             raw = storage.get(raw_key).decode("utf-8")
             file.markdown_text = clean_markdown(raw)
             file.converted_at = func.now()
+            search.refresh_search_vector(session, file.report_id)  # #18：正文随转换完成入索引
             task.result = {
                 "report_id": file.report_id,
                 "report_file_id": file.id,

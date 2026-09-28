@@ -12,10 +12,11 @@ export function ReportsPage() {
   const { user } = useAuth();
 
   // 提交态（点查询/回车才生效）与展示态分离，避免每敲一个字就发请求
+  const [q, setQ] = useState("");
   const [broker, setBroker] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [applied, setApplied] = useState({ broker: "", dateFrom: "", dateTo: "" });
+  const [applied, setApplied] = useState({ q: "", broker: "", dateFrom: "", dateTo: "" });
   const [page, setPage] = useState(0);
 
   const [data, setData] = useState<ReportList | null>(null);
@@ -27,6 +28,7 @@ export function ReportsPage() {
     setLoading(true);
     api
       .listReports({
+        q: applied.q.trim() || undefined,
         broker: applied.broker.trim() || undefined,
         date_from: applied.dateFrom || undefined,
         date_to: applied.dateTo || undefined,
@@ -53,15 +55,16 @@ export function ReportsPage() {
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
     setPage(0);
-    setApplied({ broker, dateFrom, dateTo });
+    setApplied({ q, broker, dateFrom, dateTo });
   };
 
   const onReset = () => {
+    setQ("");
     setBroker("");
     setDateFrom("");
     setDateTo("");
     setPage(0);
-    setApplied({ broker: "", dateFrom: "", dateTo: "" });
+    setApplied({ q: "", broker: "", dateFrom: "", dateTo: "" });
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
@@ -78,6 +81,10 @@ export function ReportsPage() {
       </div>
 
       <form className="card form-row" onSubmit={onSearch}>
+        <label className="field">
+          <span>关键词（标题/正文/总结）</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="如：算力、创新药" />
+        </label>
         <label className="field">
           <span>券商（精确匹配）</span>
           <input value={broker} onChange={(e) => setBroker(e.target.value)} placeholder="如：中信证券" />

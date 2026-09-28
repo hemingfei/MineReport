@@ -53,6 +53,31 @@ def _psql(database: str, sql: str) -> None:
     )
 
 
+def _init_search_config() -> None:
+    """测试库补放卷首启 init 脚本（zhparser/zhcfg 只装在默认库 minereport 上；
+    #18 起迁移与应用依赖 zhcfg，测试库须与生产同构 = init 脚本 + alembic）。"""
+    init_sql = (BACKEND_DIR / "postgres" / "init" / "001_zhparser.sql").read_text(encoding="utf-8")
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(BACKEND_DIR.parent / "docker-compose.yml"),
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "postgres",
+            "-d",
+            "minereport_test",
+        ],
+        input=init_sql.encode("utf-8"),
+        check=True,
+        capture_output=True,
+    )
+
+
 @pytest.fixture(scope="session")
 def test_database_url() -> str:
     # 密码与 compose 同源（POSTGRES_PASSWORD，默认 postgres），不硬编码真实凭据
@@ -61,6 +86,7 @@ def test_database_url() -> str:
     # 幂等：先删后建（重复执行安全）
     _psql("postgres", "DROP DATABASE IF EXISTS minereport_test WITH (FORCE)")
     _psql("postgres", "CREATE DATABASE minereport_test")
+    _init_search_config()
     # 迁移建表（与生产同路径：alembic upgrade head）
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],

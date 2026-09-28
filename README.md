@@ -15,6 +15,10 @@ docker compose up -d --build
 拉起三个服务：
 
 - **postgres** — PostgreSQL 17 + zhparser 中文分词扩展（镜像 `abcfy2/zhparser:17`），首启自动建 `zhcfg` 全文检索配置
+  （`docker-entrypoint-initdb.d` 只在数据卷为空时执行；**既有卷升级到 #18 后须手动补一次**：
+  `docker compose exec -T postgres psql -U postgres -d minereport < backend/postgres/init/001_zhparser.sql`，
+  否则迁移静默成功但全文搜索写入会报 `text search configuration "zhcfg" does not exist`；随后
+  `backend/` 下 `uv run python scripts/backfill_search.py` 回填存量研报的搜索向量）
 - **api** — FastAPI，`http://localhost:8000`，健康检查 `GET /health`；启动时执行 alembic 迁移，随后按 `BOOTSTRAP_ADMIN_*` 引导首个管理员（可选）
 - **worker** — 轮询共享任务表（`tasks`）的分析 worker，日志每 30s 输出一次心跳
 

@@ -3,11 +3,13 @@
 PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）；
 Target/TargetIndustryHistory/TargetMatch/AnalysisTarget 支撑标的主数据、规范化瀑布与
 人工确认队列（#16）；Theme/ReportTheme/ThemeMembership/AnalysisAuthor 支撑题材受控
-词表治理、研报/标的关联与分析师覆盖查询（#17）。"""
+词表治理、研报/标的关联与分析师覆盖查询（#17）；search_vector 支撑中文全文检索（#18）。"""
 
 import datetime as dt
+from typing import Any
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, func, text
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -139,6 +141,12 @@ class ResearchReport(Base):
         DateTime(timezone=True), nullable=True, comment="软删除时间；NULL 即未删除"
     )
     deleted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, comment="删除操作人")
+    search_vector: Mapped[Any] = mapped_column(
+        TSVECTOR,
+        nullable=True,
+        deferred=True,  # 向量只写不读，常规查询不携带
+        comment="标题A/正文B/总结C 的 zhcfg 全文向量（app/search.py 维护）",
+    )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

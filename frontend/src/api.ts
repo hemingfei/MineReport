@@ -356,7 +356,7 @@ export const api = {
     return request<ReportCreated>("/api/reports", { method: "POST", body: data });
   },
 
-  listReports: (filters: { broker?: string; date_from?: string; date_to?: string; limit: number; offset: number }) =>
+  listReports: (filters: { q?: string; broker?: string; date_from?: string; date_to?: string; limit: number; offset: number }) =>
     request<ReportList>(`/api/reports${qs(filters)}`),
 
   getReport: (id: number) => request<Report>(`/api/reports/${id}`),
