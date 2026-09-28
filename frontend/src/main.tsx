@@ -4,12 +4,14 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { AuthProvider, RequireRole } from "./auth";
 import { AppLayout } from "./components/AppLayout";
 import {
+  ConnectorLogPage,
   InvitationsPage,
   LoginPage,
   NotFoundPage,
   RegisterPage,
   ReportDetailPage,
   ReportsPage,
+  SubscriptionsPage,
   TargetQueuePage,
   ThemeDetailPage,
   ThemesPage,
@@ -45,6 +47,22 @@ const router = createBrowserRouter([
         element: (
           <RequireRole min="analyst">
             <TargetQueuePage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: "subscriptions",
+        element: (
+          <RequireRole min="analyst">
+            <SubscriptionsPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: "connector-log",
+        element: (
+          <RequireRole min="admin">
+            <ConnectorLogPage />
           </RequireRole>
         ),
       },

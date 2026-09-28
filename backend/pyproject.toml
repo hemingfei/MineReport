@@ -16,6 +16,7 @@ dependencies = [
     "onnxruntime>=1.30",
     "python-multipart>=0.0.32",
     "akshare>=1.18",
+    "apscheduler>=3.10,<4",
 ]
 
 [dependency-groups]

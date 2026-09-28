@@ -24,3 +24,8 @@ class AnalysisError(PipelineError):
 
 class MasterDataError(PipelineError):
     """主数据导入失败（#16）：akshare 接口超时 / 申万 xls 拉取失败 / 行数据非法等。"""
+
+
+class ConnectorError(PipelineError):
+    """连接器失败（#19）：凭据未配置 / 平台 HTTP 或鉴权错误 / 响应不可解析 /
+    下载 URL 缺失 / host 不安全等。调度器据此走退避重试。"""

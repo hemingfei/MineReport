@@ -180,6 +180,16 @@ def api(db_engine):
 
 
 @pytest.fixture()
+def session_factory(db_engine):
+    """调用时解析的 SessionLocal（#19）：db_engine 会重绑 app.db.SessionLocal，
+    测试文件顶层 `from app.db import SessionLocal` 按值导入会写进开发库——
+    一律用本 fixture（或函数内导入）。"""
+    import app.db as db_mod
+
+    return db_mod.SessionLocal
+
+
+@pytest.fixture()
 def make_user(db_engine):
     """直接入库造用户（鸡生蛋：首个 admin 无法经 API 产生）。密码随机生成，挂在返回对象上。"""
 

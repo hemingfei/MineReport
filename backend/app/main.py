@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from .auth import get_current_user
 from .config import get_settings
 from .models import User
-from .routers import admin, auth, authors, reports, targets, tasks, themes
+from .routers import admin, auth, authors, reports, subscriptions, targets, tasks, themes
 
 
 class HealthResponse(BaseModel):
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(targets.router)
     app.include_router(themes.router)
     app.include_router(authors.router)
+    app.include_router(subscriptions.router)
     app.include_router(tasks.router)
 
     return app

@@ -1,9 +1,11 @@
 export { NotFoundPage } from "./NotFoundPage";
+export { ConnectorLogPage } from "./ConnectorLogPage";
 export { InvitationsPage } from "./InvitationsPage";
 export { LoginPage } from "./LoginPage";
 export { RegisterPage } from "./RegisterPage";
 export { ReportDetailPage } from "./ReportDetailPage";
 export { ReportsPage } from "./ReportsPage";
+export { SubscriptionsPage } from "./SubscriptionsPage";
 export { TargetQueuePage } from "./TargetQueuePage";
 export { ThemeDetailPage } from "./ThemeDetailPage";
 export { ThemesPage } from "./ThemesPage";

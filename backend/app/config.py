@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     analysis_chunk_overlap: int = 1_000
     analysis_head_chars: int = 3_000  # publish_date 正则锚定的"首页"窗口
 
+    # 连接器与订阅调度（#19）。凭据仅环境变量（FXBAOGAO_API_KEY），源码无字面量
+    fxbaogao_api_key: str = ""
+    fxbaogao_api_base: str = "https://api.fxbaogao.com"
+    fxbaogao_download_base: str = "https://dr.fxbaogao.com/"  # download 端点返回相对路径时的拼接前缀
+    fxbaogao_timeout_seconds: float = 60.0
+    connector_rate_per_second: float = 1.0  # 连接器全局限速（spec：1 req/s）
+    connector_max_pages_per_query: int = 3  # search 单查询翻页上限（API 硬上限 10 页）
+    subscription_tick_seconds: float = 60.0  # worker 里 APScheduler 扫 due 订阅的间隔
+    subscription_default_interval_hours: int = 6  # 默认订阅间隔
+    subscription_jitter_seconds: float = 600.0  # 排程错峰抖动幅度（±，秒）
+
 
 @lru_cache
 def get_settings() -> Settings:

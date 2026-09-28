@@ -7,6 +7,9 @@
 
 分析（#15）：convert 完成后链式进入 analyzing（LLM 未配置则记 skipped 后 done）；
 reanalyze/批量重跑产生独立 analyze 任务（跳过转换，直接分析最近转换完成的文件）。
+
+订阅调度（#19）：main() 里另起 APScheduler 定时扫 due 订阅（连接器拉取/去重/退避
+编排见 app/scheduler.py）；调度与任务轮询互不阻塞，重启各自恢复。
 """
 
 import datetime as dt
@@ -295,6 +298,41 @@ def handle_import_themes(task_id: int) -> None:
 HANDLERS["import_themes"] = handle_import_themes
 
 
+def start_subscription_scheduler() -> "BackgroundScheduler | None":
+    """APScheduler（spec：调度进 worker 容器）：定时扫 due 订阅驱动连接器拉取。
+
+    tick 间隔 settings.subscription_tick_seconds（默认 60s）；单订阅执行语义与
+    退避/死信见 app/scheduler.py。启动失败不阻断轮询主循环（调度是增值面）。
+    """
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+    except ImportError:  # pragma: no cover - 依赖缺失时降级为纯任务轮询
+        log.warning("apscheduler 未安装，订阅调度未启动")
+        return None
+    s = get_settings()
+    sched = BackgroundScheduler(timezone=dt.timezone.utc)
+    sched.add_job(
+        lambda: _safe_tick(),
+        "interval",
+        seconds=s.subscription_tick_seconds,
+        max_instances=1,
+        coalesce=True,
+        id="subscription-tick",
+    )
+    sched.start()
+    log.info("订阅调度已启动：tick 间隔 %.0fs", s.subscription_tick_seconds)
+    return sched
+
+
+def _safe_tick() -> None:
+    from . import scheduler
+
+    try:
+        scheduler.tick()
+    except Exception:  # noqa: BLE001 - 调度轮异常不杀 APScheduler 线程
+        log.exception("subscription tick 异常")
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -302,21 +340,26 @@ def main() -> None:
     )
     s = get_settings()
     log.info("worker %s 启动：轮询间隔 %.1fs，心跳间隔 %.0fs", s.worker_id, s.worker_poll_interval, s.worker_heartbeat_interval)
+    sched = start_subscription_scheduler()
     last_heartbeat = dt.datetime.now() - dt.timedelta(seconds=s.worker_heartbeat_interval)
-    while True:
-        task = None
-        try:
-            task = run_once()
-        except Exception:
-            # 瞬时故障（DB 重启/死锁/网络抖动）不退出进程，退避后继续轮询
-            log.exception("run_once 异常，退避后继续轮询")
-            time.sleep(min(s.worker_poll_interval * 5, 30.0))
-        now = dt.datetime.now()
-        if (now - last_heartbeat).total_seconds() >= s.worker_heartbeat_interval:
-            log.info("heartbeat: worker %s alive, poll interval %.1fs", s.worker_id, s.worker_poll_interval)
-            last_heartbeat = now
-        if task is None:
-            time.sleep(s.worker_poll_interval)
+    try:
+        while True:
+            task = None
+            try:
+                task = run_once()
+            except Exception:
+                # 瞬时故障（DB 重启/死锁/网络抖动）不退出进程，退避后继续轮询
+                log.exception("run_once 异常，退避后继续轮询")
+                time.sleep(min(s.worker_poll_interval * 5, 30.0))
+            now = dt.datetime.now()
+            if (now - last_heartbeat).total_seconds() >= s.worker_heartbeat_interval:
+                log.info("heartbeat: worker %s alive, poll interval %.1fs", s.worker_id, s.worker_poll_interval)
+                last_heartbeat = now
+            if task is None:
+                time.sleep(s.worker_poll_interval)
+    finally:
+        if sched is not None:
+            sched.shutdown(wait=False)
 
 
 if __name__ == "__main__":

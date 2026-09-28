@@ -33,6 +33,9 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      # 连接器凭据只从环境变量读取（spec：源码/示例/测试不落可用凭据字面量）；
+      # API 容器的手动下载/额度提示与 worker 的订阅调度同源
+      FXBAOGAO_API_KEY: ${FXBAOGAO_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:
@@ -53,6 +56,8 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
+      # 订阅调度（fxbaogao 连接器）凭据，同上仅环境变量
+      FXBAOGAO_API_KEY: ${FXBAOGAO_API_KEY:-}
     volumes:
       - filedata:/data
     depends_on:

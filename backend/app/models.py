@@ -3,7 +3,9 @@
 PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）；
 Target/TargetIndustryHistory/TargetMatch/AnalysisTarget 支撑标的主数据、规范化瀑布与
 人工确认队列（#16）；Theme/ReportTheme/ThemeMembership/AnalysisAuthor 支撑题材受控
-词表治理、研报/标的关联与分析师覆盖查询（#17）；search_vector 支撑中文全文检索（#18）。"""
+词表治理、研报/标的关联与分析师覆盖查询（#17）；search_vector 支撑中文全文检索（#18）；
+Subscription/ExternalRef/ConnectorRun 支撑连接器订阅调度：查询展开、双重去重、
+退避重试与死信告警（#19）。"""
 
 import datetime as dt
 from typing import Any
@@ -454,3 +456,105 @@ class AnalysisAuthor(Base):
     seq: Mapped[int] = mapped_column(Integer, comment="在 result.authors 中的序位")
     name: Mapped[str] = mapped_column(String(128), comment="LLM 提取的署名原文")
     cert: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="执业证书号（可缺）")
+
+
+class Subscription(Base):
+    """订阅（#19）：绑题材，调度器定时用题材名+同义词（+可选额外词）作查询词拉新研报。
+
+    调度状态全在本表：next_run_at 到期即跑（worker 的 APScheduler 定时 tick 扫表）；
+    失败按 attempt 走 1m/5m/25m 退避，3 次耗尽进死信（consecutive_failures++，
+    满 5 轮告警）；成功即全部归零并按 interval+抖动排下一轮。auto_download 由
+    admin 按订阅控制（默认开）；关闭时命中只记元数据（ExternalRef.status=seen），
+    分析师可在额度提示下手动单篇下载。
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    connector_id: Mapped[str] = mapped_column(String(32), comment="连接器注册表键，如 fxbaogao")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="订阅人（拉回研报的入库人）")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    interval_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=6, comment="调度间隔（小时）")
+    auto_download: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="命中是否自动下载 PDF（扣下载额度）")
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="题材名+同义词之外的额外查询词")
+    orgs: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="机构过滤（可选）")
+    cursor_pubtime: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="pubTime 增量游标（下轮 discover 的 since）"
+    )
+    next_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="本轮已退避重试次数（0-3）")
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="连续死信轮数；达 5 触发告警"
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ExternalRef(Base):
+    """外部引用（#19）：(connector_id, external_id) 唯一，防同报告被多关键词/多轮重复拉取。
+
+    元数据先行（discover 不扣额度）：seen 即仅元数据；duplicate = 组合键已在本库
+    （ADR-0001，不下载省额度）；ingested = 已下载并入既有任务管道；fetch_failed =
+    下载失败可重试。阅读链接按 external_id 确定性推导（fxbaogao.com/view?id=）。
+    """
+
+    __tablename__ = "external_refs"
+    __table_args__ = (Index("uq_external_refs", "connector_id", "external_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    connector_id: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(64))
+    report_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reports.id"), nullable=True, index=True, comment="关联的本库研报（duplicate/ingested 非空）"
+    )
+    status: Mapped[str] = mapped_column(String(16), comment="seen | ingested | duplicate | fetch_failed")
+    title: Mapped[str] = mapped_column(String(512), comment="剥离 <em> 高亮后的标题")
+    broker: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="来源侧机构名（orgName）")
+    publish_date: Mapped[dt.date] = mapped_column(Date, comment="pubTime 秒级时间戳换算的日期")
+    industry: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="来源侧行业（与申万口径不一致，仅来源标签）")
+    pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True, comment="命中段落摘录（<em> 已剥）")
+    subscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="首个发现它的订阅（审计）；订阅删除后置空，记录保留",
+    )
+    discovered_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    fetched_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="最近一次下载失败原因")
+
+
+class ConnectorRun(Base):
+    """连接器运行日志（#19）：管理员视角的成功/失败/死信/告警/额度。
+
+    event 词表：run（每轮执行，ok=成败，stats 带查询/发现/下载/入库计数——downloaded
+    即额度消耗）、retry（退避重试排程）、dead_letter（3 次退避耗尽）、alert（连续
+    5 轮死信告警）、manual_download（手动单篇下载，额度计数）。
+    """
+
+    __tablename__ = "connector_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    connector_id: Mapped[str] = mapped_column(String(32))
+    subscription_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="手动下载等无订阅上下文时为 NULL；订阅删除后置空，日志保留",
+    )
+    event: Mapped[str] = mapped_column(String(16), comment="run | retry | dead_letter | alert | manual_download")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    message: Mapped[str] = mapped_column(Text, default="")
+    stats: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="轮级计数：queries/found/new/downloaded/ingested/duplicates 等")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

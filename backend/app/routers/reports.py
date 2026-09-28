@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import unicodedata
 from pathlib import Path
 from urllib.parse import quote
@@ -19,16 +18,17 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as OrmSession
 
 from .. import analysis
 from ..analysis import latest_converted_file
 from ..auth import require_role
 from ..config import get_settings
-from ..conversion import SUPPORTED_EXTENSIONS, normalize_title
+from ..conversion import SUPPORTED_EXTENSIONS
 from ..db import get_db
 from .. import search
+from ..ingest import find_active_by_identity as _find_active_by_identity
+from ..ingest import ingest_report_file
 from ..models import (
     Analysis,
     AnalysisTarget,
@@ -195,46 +195,6 @@ def _latest_uploaded_file(db: OrmSession, report_id: int) -> ReportFile:
     return file
 
 
-def _find_active_by_identity(
-    db: OrmSession, title_norm: str, broker: str, publish_date: dt.date, *, exclude_id: int | None = None
-) -> ResearchReport | None:
-    """ADR-0001 组合键查找（仅未删除行；exclude_id 供恢复撞键检查排除自身）。"""
-    conds = [
-        ResearchReport.title_norm == title_norm,
-        ResearchReport.broker == broker,
-        ResearchReport.publish_date == publish_date,
-        ResearchReport.deleted_at.is_(None),
-    ]
-    if exclude_id is not None:
-        conds.append(ResearchReport.id != exclude_id)
-    return db.scalar(select(ResearchReport).where(*conds))
-
-
-def _find_or_create_report(
-    db: OrmSession, title: str, broker: str, publish_date: dt.date, user_id: int
-) -> tuple[ResearchReport, bool]:
-    """组合键找既有研报；并发撞唯一索引时回读并入（IntegrityError 兜底）。"""
-    title_norm = normalize_title(title)
-    existing = _find_active_by_identity(db, title_norm, broker, publish_date)
-    if existing is not None:
-        return existing, True
-
-    report = ResearchReport(
-        title=title, title_norm=title_norm, broker=broker,
-        publish_date=publish_date, created_by=user_id,
-    )
-    db.add(report)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        existing = _find_active_by_identity(db, title_norm, broker, publish_date)
-        if existing is None:
-            raise
-        return existing, True
-    return report, False
-
-
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=ReportCreateOut)
 async def create_report(
     file: UploadFile,
@@ -252,9 +212,8 @@ async def create_report(
             detail=f"仅支持 PDF/DOCX：{filename}",
         )
 
-    # 流式读入（同时算 sha256）后再校验大小：超限即拒，不落盘
+    # 流式读入（超限即拒，不落盘）；sha256 由入库回调统一计算
     chunks: list[bytes] = []
-    sha = hashlib.sha256()
     size = 0
     while chunk := await file.read(_READ_CHUNK):
         size += len(chunk)
@@ -263,35 +222,20 @@ async def create_report(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"文件超过 {s.upload_max_mb}MB 上限",
             )
-        sha.update(chunk)
         chunks.append(chunk)
     data = b"".join(chunks)
 
-    report, merged = _find_or_create_report(
-        db, title or Path(filename).stem, broker.strip(), publish_date, user.id
-    )
-
-    file_row = ReportFile(
-        report_id=report.id,
-        storage_key="",  # 先占位，flush 拿 id 后回填
+    # 入库回调（#19 抽取到 app.ingest，与连接器拉取共用同一套管道）
+    report, file_row, task, merged = ingest_report_file(
+        db,
+        title=title or Path(filename).stem,
+        broker=broker.strip(),
+        publish_date=publish_date,
         filename=filename,
         content_type=file.content_type,
-        size_bytes=size,
-        file_sha256=sha.hexdigest(),
-        uploaded_by=user.id,
+        data=data,
+        user_id=user.id,
     )
-    db.add(file_row)
-    db.flush()
-    file_row.storage_key = f"reports/{report.id}/files/{file_row.id}/{filename}"
-    get_storage().put(file_row.storage_key, data)
-
-    task = Task(
-        kind="convert",
-        status=TaskStatus.UPLOADED,
-        payload={"report_id": report.id, "report_file_id": file_row.id},
-    )
-    db.add(task)
-    search.refresh_search_vector(db, report.id)  # #18：建档即索引标题（正文/总结随转换/分析补）
     db.commit()
     return ReportCreateOut(
         task_id=task.id, report_id=report.id, file_id=file_row.id, merged=merged

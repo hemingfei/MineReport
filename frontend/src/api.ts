@@ -241,6 +241,125 @@ export interface AuthorCoverage {
   targets: CoverageTargetItem[];
 }
 
+// ---------- subscriptions / connector（#19：订阅与连接器） ----------
+
+/** 订阅：绑题材，题材名+同义词自动展开为查询词 */
+export interface Subscription {
+  id: number;
+  theme_id: number;
+  theme_name: string;
+  connector_id: string;
+  created_by: number;
+  enabled: boolean;
+  interval_hours: number;
+  auto_download: boolean;
+  keywords: string[] | null;
+  orgs: string[] | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_success_at: string | null;
+  attempt: number;
+  consecutive_failures: number;
+  created_at: string;
+}
+
+export interface SubscriptionList {
+  items: Subscription[];
+  total: number;
+}
+
+/** 发现记录状态：seen 仅元数据 | ingested 已下载入库 | duplicate 库内已有 | fetch_failed 下载失败 */
+export type RefStatus = "seen" | "ingested" | "duplicate" | "fetch_failed";
+
+export const REF_STATUS_LABEL: Record<RefStatus, string> = {
+  seen: "待下载",
+  ingested: "已入库",
+  duplicate: "库内已有",
+  fetch_failed: "下载失败",
+};
+
+export function refStatusChipClass(status: string): string {
+  if (status === "ingested") return "chip chip-ok";
+  if (status === "seen") return "chip chip-warn";
+  if (status === "fetch_failed") return "chip chip-danger";
+  return "chip chip-muted";
+}
+
+export interface RefItem {
+  id: number;
+  connector_id: string;
+  external_id: string;
+  status: RefStatus;
+  title: string;
+  broker: string | null;
+  publish_date: string;
+  industry: string | null;
+  pages: number | null;
+  snippet: string | null;
+  report_id: number | null;
+  subscription_id: number | null;
+  report_url: string | null;
+  discovered_at: string;
+  fetched_at: string | null;
+  last_error: string | null;
+}
+
+export interface RefList {
+  items: RefItem[];
+  total: number;
+}
+
+export interface ManualDownloadResult {
+  ref: RefItem;
+  report_id: number;
+  task_id: number;
+}
+
+/** 连接器日志事件：run 每轮执行 | retry 退避重试 | dead_letter 死信 | alert 告警 | manual_download 手动下载 */
+export type ConnectorRunEvent =
+  | "run"
+  | "retry"
+  | "dead_letter"
+  | "alert"
+  | "manual_download";
+
+export const RUN_EVENT_LABEL: Record<ConnectorRunEvent, string> = {
+  run: "执行",
+  retry: "退避重试",
+  dead_letter: "死信",
+  alert: "告警",
+  manual_download: "手动下载",
+};
+
+export function runEventChipClass(event: string): string {
+  if (event === "alert" || event === "dead_letter") return "chip chip-danger";
+  if (event === "manual_download") return "chip chip-ok";
+  return "chip chip-muted";
+}
+
+export interface ConnectorRunItem {
+  id: number;
+  connector_id: string;
+  subscription_id: number | null;
+  event: ConnectorRunEvent;
+  ok: boolean;
+  message: string;
+  stats: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ConnectorRunList {
+  items: ConnectorRunItem[];
+  total: number;
+}
+
+/** 下载额度汇总（手动下载确认框的提示数据源） */
+export interface ConnectorQuota {
+  downloads_today: number;
+  downloads_total: number;
+  hints: Record<string, string>;
+}
+
 /** 会话失效（401）时广播，AuthProvider 监听后清空登录态。 */
 export const UNAUTHORIZED_EVENT = "mr:unauthorized";
 
@@ -425,4 +544,34 @@ export const api = {
   /** 分析师覆盖：其研报所涉题材与标的（观点迁移追踪） */
   getAuthorCoverage: (name: string, cert?: string, broker?: string) =>
     request<AuthorCoverage>(`/api/authors/coverage${qs({ name, cert, broker })}`),
+
+  // ---------- subscriptions / connector（#19） ----------
+
+  listSubscriptions: () => request<SubscriptionList>("/api/subscriptions"),
+
+  createSubscription: (body: { theme_id: number; connector_id?: string; interval_hours?: number; auto_download?: boolean; keywords?: string[]; orgs?: string[] }) =>
+    request<Subscription>("/api/subscriptions", { method: "POST", body: JSON.stringify(body) }),
+
+  /** enabled/interval/keywords/orgs 归属人可改；auto_download 仅 admin（额度管控） */
+  patchSubscription: (
+    id: number,
+    body: { enabled?: boolean; interval_hours?: number; auto_download?: boolean; keywords?: string[]; orgs?: string[] },
+  ) => request<Subscription>(`/api/subscriptions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteSubscription: (id: number) => request<void>(`/api/subscriptions/${id}`, { method: "DELETE" }),
+
+  /** 发现记录（手动下载工作池）；status 过滤可组合 */
+  listRefs: (filters: { status_filter?: string; limit?: number; offset?: number } = {}) =>
+    request<RefList>(`/api/subscriptions/refs${qs(filters)}`),
+
+  /** 手动单篇下载（额度提示后的确认动作）→ 入库 + convert 任务 */
+  downloadRef: (refId: number) =>
+    request<ManualDownloadResult>(`/api/refs/${refId}/download`, { method: "POST" }),
+
+  /** 额度汇总 + 各连接器下载提示文案 */
+  getConnectorQuota: () => request<ConnectorQuota>("/api/connector/quota"),
+
+  /** 连接器运行日志（admin）：成功/失败/死信/告警/手动下载 */
+  listConnectorRuns: (filters: { event?: string; subscription_id?: number; limit?: number; offset?: number } = {}) =>
+    request<ConnectorRunList>(`/api/admin/connector-runs${qs(filters)}`),
 };
