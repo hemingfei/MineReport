@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 本地数据卷（compose 挂载）
+data/
+
+# 环境与凭据（另有 .git/info/exclude 排除 .env）
+.env
+
+# Node（前端票加入后）
+node_modules/

@@ -1,0 +1,2 @@
+# 容器内 shell 脚本必须保持 LF：Windows 检出成 CRLF 会导致 /bin/sh 无法执行
+*.sh text eol=lf
