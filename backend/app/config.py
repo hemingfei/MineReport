@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     worker_lease_seconds: float = 600.0  # 任务租约：converting 超过此时长视为遗弃、可重新领取
     worker_id: str = "worker-1"
 
+    # 认证
+    invitation_ttl_days: int = 7  # 邀请码有效期
+    session_ttl_days: int = 14  # 会话有效期（固定，不滑动续期）
+    session_cookie_secure: bool = False  # 生产经 HTTPS 反代时置 true
+    bootstrap_admin_email: str = ""  # 初始管理员引导（库中无 admin 时创建一次）
+    bootstrap_admin_password: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

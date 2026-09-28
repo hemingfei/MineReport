@@ -1,10 +1,13 @@
-"""FastAPI 应用：骨架期只有 /health 与 GET /api/tasks/{id}（轮询语义的种子端点）。"""
+"""FastAPI 应用：/health、认证、邀请管理与任务轮询。"""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session as OrmSession
 
 from . import db
-from .models import Task
+from .auth import get_current_user
+from .models import Task, User
+from .routers import admin, auth
 
 
 class HealthResponse(BaseModel):
@@ -28,12 +31,15 @@ def create_app() -> FastAPI:
         return HealthResponse()
 
     @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
-    def get_task(task_id: int) -> Task:
+    def get_task(task_id: int, user: User = Depends(get_current_user)) -> Task:
         with db.SessionLocal() as session:
             task = session.get(Task, task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return task
+
+    app.include_router(auth.router)
+    app.include_router(admin.router)
 
     return app
 

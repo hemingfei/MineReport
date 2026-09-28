@@ -46,6 +46,7 @@ wait_for_db
 case "$1" in
     api)
         uv run alembic upgrade head
+        uv run python -m app.bootstrap
         exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
         ;;
     worker)

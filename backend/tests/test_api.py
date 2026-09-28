@@ -2,24 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
-
-
-@pytest.fixture()
-def api(test_database_url: str) -> TestClient:
-    # 让应用连测试库（SessionLocal 在 import 时绑定 engine，这里重建）
-    import app.db as db_mod
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
-    engine = create_engine(test_database_url)
-    db_mod.engine = engine
-    db_mod.SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
-
-    return TestClient(create_app())
+from app.models import Role
 
 
 def test_health(api: TestClient) -> None:
@@ -28,12 +13,14 @@ def test_health(api: TestClient) -> None:
     assert r.json() == {"status": "ok"}
 
 
-def test_task_roundtrip_poll_semantics(api: TestClient) -> None:
+def test_task_roundtrip_poll_semantics(api: TestClient, make_user, login) -> None:
     """API 建任务 → worker 消费 → 轮询可见状态流转（spec：异步任务一律轮询）。"""
     from sqlalchemy import select
 
     import app.db as db_mod
     from app.models import Task, TaskStatus
+
+    cookies = login(make_user(Role.ANALYST))
 
     # API 侧建任务（骨架期无 POST /api/reports，直接经共享任务表投递）
     with db_mod.SessionLocal() as db:
@@ -42,7 +29,7 @@ def test_task_roundtrip_poll_semantics(api: TestClient) -> None:
         db.commit()
         task_id = task.id
 
-    r = api.get(f"/api/tasks/{task_id}")
+    r = api.get(f"/api/tasks/{task_id}", cookies=cookies)
     assert r.status_code == 200
     assert r.json()["status"] == "uploaded"
 
@@ -52,7 +39,7 @@ def test_task_roundtrip_poll_semantics(api: TestClient) -> None:
     done = worker.run_once()
     assert done is not None and done.id == task_id
 
-    r = api.get(f"/api/tasks/{task_id}")
+    r = api.get(f"/api/tasks/{task_id}", cookies=cookies)
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "done"
@@ -60,5 +47,6 @@ def test_task_roundtrip_poll_semantics(api: TestClient) -> None:
     assert body["attempts"] == 1
 
 
-def test_task_404(api: TestClient) -> None:
-    assert api.get("/api/tasks/999999").status_code == 404
+def test_task_404(api: TestClient, make_user, login) -> None:
+    cookies = login(make_user(Role.READER))
+    assert api.get("/api/tasks/999999", cookies=cookies).status_code == 404
