@@ -23,7 +23,7 @@ from app.models import ReportFile, ResearchReport, Role, Target, Theme
 from app.synthesis import input_fingerprint, normalize_synthesis
 from app.themes import ThemeSource, ThemeStatus, normalize_theme_name
 
-from test_analysis import make_llm
+from helpers import make_llm
 
 # ---------- 造数 helpers ----------
 

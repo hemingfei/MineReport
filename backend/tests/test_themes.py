@@ -35,7 +35,7 @@ from app.themes import (
     normalize_theme_name,
 )
 
-from test_analysis import make_llm
+from helpers import make_llm
 
 # ---------- 纯逻辑 ----------
 

@@ -22,7 +22,6 @@ from app.models import (
     Task,
     Theme,
 )
-from app.themes import normalize_theme_name
 
 NOW = dt.datetime(2026, 10, 9, 12, 0, tzinfo=dt.timezone.utc)
 
@@ -73,30 +72,6 @@ def make_ref(eid: str, *, title=None, broker="测试证券", day=9) -> ReportRef
 def _no_jitter(tweak_settings):
     """抖动归零：next_run_at 断言可精确。"""
     tweak_settings(subscription_jitter_seconds=0)
-
-
-@pytest.fixture()
-def make_theme(db_engine):
-    def _make(name="AI算力", synonyms=("算力",), status="active"):
-        with session_scope() as s:
-            t = Theme(
-                name=name,
-                name_norm=normalize_theme_name(name),
-                status=status,
-                source="manual",
-                synonyms=list(synonyms),
-            )
-            s.add(t)
-            s.commit()
-            return t.id
-
-    return _make
-
-
-@pytest.fixture()
-def theme(make_theme):
-    """每测试一个默认题材（AI算力 + 同义词[算力]）；需要多题材时用 make_theme。"""
-    return make_theme()
 
 
 @pytest.fixture()

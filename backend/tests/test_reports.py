@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import datetime as dt
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,9 +15,8 @@ from app import worker
 from app.conversion import clean_markdown
 from app.models import Role
 
-SAMPLES_DIR = Path(__file__).resolve().parents[2] / "research" / "markitdown-samples"
+from helpers import DONGWU_PDF, SAMPLES_DIR
 
-DONGWU = "dongwu-002635-anjie-20241231.pdf"
 ENCRYPTED = "edge-encrypted.pdf"
 SCANNED = "edge-scanned-image-only.pdf"
 
@@ -26,12 +24,12 @@ SCANNED = "edge-scanned-image-only.pdf"
 def _upload(
     api: TestClient,
     cookies: dict,
-    filename: str = DONGWU,
+    filename: str = DONGWU_PDF,
     broker: str = "东吴证券",
     publish_date: str = "2024-12-31",
     title: str | None = None,
 ):
-    if not (SAMPLES_DIR / "pdf" / DONGWU).exists():
+    if not (SAMPLES_DIR / "pdf" / DONGWU_PDF).exists():
         pytest.skip("research/markitdown-samples 本地资产不在仓库，相关测试跳过")
     data = {"broker": broker, "publish_date": publish_date}
     if title is not None:
@@ -164,7 +162,7 @@ def test_dedup_different_broker_or_date_stays_separate(api: TestClient, make_use
 
 def test_list_filter_and_pagination(api: TestClient, make_user, login) -> None:
     cookies = login(make_user(Role.ANALYST))
-    _upload(api, cookies, title="A", broker="东吴证券", publish_date="2024-12-31", filename=DONGWU)
+    _upload(api, cookies, title="A", broker="东吴证券", publish_date="2024-12-31", filename=DONGWU_PDF)
     _upload(api, cookies, title="B", broker="国源证券", publish_date="2024-11-30", filename=ENCRYPTED)
     _upload(api, cookies, title="C", broker="东吴证券", publish_date="2025-01-15", filename=SCANNED)
 
@@ -192,7 +190,7 @@ def test_file_download_role_matrix(api: TestClient, make_user, login, sample_pdf
     assert r.status_code == 403  # 读者默认拒
     r = api.get(f"/api/reports/{body['report_id']}/file", cookies=analyst)
     assert r.status_code == 200
-    assert r.content == sample_pdf(DONGWU)
+    assert r.content == sample_pdf(DONGWU_PDF)
     assert "attachment" in r.headers["content-disposition"]
 
 
@@ -202,7 +200,7 @@ def test_file_download_reader_allowed_via_flag(api: TestClient, make_user, login
     reader = login(make_user(Role.READER))
     body = _upload(api, analyst, title="安洁科技点评").json()
     r = api.get(f"/api/reports/{body['report_id']}/file", cookies=reader)
-    assert r.status_code == 200 and r.content == sample_pdf(DONGWU)
+    assert r.status_code == 200 and r.content == sample_pdf(DONGWU_PDF)
 
 
 def test_markdown_readable_by_reader(api: TestClient, make_user, login) -> None:

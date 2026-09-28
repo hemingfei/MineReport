@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import secrets
-from pathlib import Path
 
 import httpx
 import pytest
@@ -25,61 +23,23 @@ from app.errors import AnalysisError
 from app.llm import LLMClient
 from app.models import Analysis, PromptTemplate, ResearchReport, Role, Task, TaskStatus
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "analysis-spike"
-DONGWU = "dongwu-002635-anjie-20241231.cleaned.fulltext.json"
-SAMPLES_DIR = Path(__file__).resolve().parents[2] / "research" / "markitdown-samples"
-DONGWU_PDF = "dongwu-002635-anjie-20241231.pdf"
-
-
-def fixture_json(name: str) -> dict:
-    return json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
-
-
-# mock 凭据运行时随机生成（仓库约定：源码不含任何凭据字面量，含假的）
-def _mock_api_key() -> str:
-    return "test-" + secrets.token_hex(8)
-
-
-# 合成研报正文：首页含发布日期（带 PDF 拆字空格）与代码，正文提及 002635
-MD_WITH_ANCHORS = (
-    "证券研究报告·公司点评·电子\n"
-    "安洁科技（002635）动态跟踪点评报告：竞争力稳步提升，静待下游复苏\n"
-    "2024 年 12月 31日\n"
-    + "公司为国际主流客户提供精密功能件与结构件，消费电子与新能源汽车双轮驱动。" * 200
+from helpers import (
+    DONGWU_JSON,
+    DONGWU_PDF,
+    MD_WITH_ANCHORS,
+    SAMPLES_DIR,
+    fixture_json,
+    make_llm,
+    mock_api_key,
 )
+
+
+# 合成正文（无首页日期形态）：只在分析锚定测试用，未跨文件共享
 MD_NO_DATE = "安洁科技（002635）点评\n" + "全球消费电子需求复苏，AR/VR 终端出货量高增。" * 200
 
 
-# ---------- mock LLM（预录响应按序回放，不碰网络） ----------
-
-def make_llm(responses: list) -> LLMClient:
-    """responses 每项：str=正常内容 / int=HTTP 错误码。队列耗尽后重复末项。"""
-    queue = list(responses)
-    calls: list[dict] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
-        item = queue.pop(0) if queue else responses[-1]
-        if isinstance(item, int):
-            return httpx.Response(item, text="mock llm error")
-        return httpx.Response(
-            200,
-            json={
-                "choices": [{"message": {"content": item}}],
-                "usage": {"prompt_tokens": 1200, "completion_tokens": 340},
-                "model": "mock-llm",
-            },
-        )
-
-    client = LLMClient(
-        "https://llm-mock.invalid/v1", _mock_api_key(), "mock-llm",
-        transport=httpx.MockTransport(handler),
-    )
-    client.mock_calls = calls  # 测试回读：断言调用次数与消息形状
-    return client
-
-
-# llm_env / make_report fixture 已上移 conftest.py（#16 测试复用）；make_llm 保留在本模块。
+# make_llm / fixture_json / 夹具名常量已上移 tests/helpers.py（架构保养⑦）；
+# llm_env / make_report fixture 在 conftest.py（#16 测试复用）。
 
 
 def _run_task(api: TestClient, cookies: dict, task_id: int) -> dict:
@@ -105,7 +65,7 @@ def _upload(api: TestClient, cookies: dict) -> dict:
 
 def test_fulltext_pipeline_lands_spec_schema(make_report) -> None:
     report_id, file_id = make_report(MD_WITH_ANCHORS)
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["publish_date"] = "2025-01-15"  # LLM 回填日期 ≠ 首页日期：锚定必须赢
 
     from app.db import session_scope
@@ -140,7 +100,7 @@ def test_prompt_template_seeded_exactly_once(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)] * 2)
     with session_scope() as s:
@@ -157,7 +117,7 @@ def test_version_chain_increments_and_pointer_moves(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)] * 2)
     with session_scope() as s:
@@ -179,7 +139,7 @@ def test_code_absent_in_text_marks_inferred(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["targets"][0]["code"] = "600519"  # 不在正文中
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
@@ -197,7 +157,7 @@ def test_publish_date_llm_fallback_is_marked_not_trusted(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["publish_date"] = "2024-12-31"
     make_report(MD_NO_DATE)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
@@ -214,7 +174,7 @@ def test_publish_date_missing_everywhere_is_null(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["publish_date"] = None
     make_report(MD_NO_DATE)
     llm = make_llm([json.dumps(raw, ensure_ascii=False)])
@@ -289,7 +249,7 @@ def test_chunk_fallback_for_overlong_documents(make_report) -> None:
     assert len(md) > s_cfg.analysis_max_input_chars
     make_report(md)
 
-    merged = fixture_json(DONGWU)
+    merged = fixture_json(DONGWU_JSON)
     partials = [
         json.dumps({"title": f"第{i}块局部", "targets": []}, ensure_ascii=False)
         for i in range(3)
@@ -314,7 +274,7 @@ def test_invalid_json_recovers_from_prose_wrapping(make_report) -> None:
     from app.db import session_scope
     from app.models import ReportFile
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     wrapped = "好的，以下是提取结果：\n" + json.dumps(raw, ensure_ascii=False) + "\n以上。"
     make_report(MD_WITH_ANCHORS)
     llm = make_llm([wrapped])
@@ -369,7 +329,7 @@ def test_json_object_fallback_when_endpoint_rejects_response_format() -> None:
                   "usage": {"prompt_tokens": 1, "completion_tokens": 1}, "model": "m"},
         )
 
-    client = LLMClient("https://llm-mock.invalid/v1", _mock_api_key(), "m", transport=httpx.MockTransport(handler))
+    client = LLMClient("https://llm-mock.invalid/v1", mock_api_key(), "m", transport=httpx.MockTransport(handler))
     result = client.chat([{"role": "user", "content": "hi"}])
     assert result.content == '{"broker": "X"}'
     assert len(seen) == 2  # 带格式失败 → 无格式重试
@@ -379,7 +339,7 @@ def test_json_object_fallback_when_endpoint_rejects_response_format() -> None:
 
 def test_convert_chains_into_analysis_end_to_end(api, make_user, login, llm_env) -> None:
     cookies = login(make_user(Role.ANALYST))
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     llm_env(make_llm([json.dumps(raw, ensure_ascii=False)]))
 
     body = _upload(api, cookies)
@@ -422,7 +382,7 @@ def test_convert_without_llm_skips_analysis(api, make_user, login) -> None:
 def test_analysis_failure_keeps_conversion_and_retry_succeeds(api, make_user, login, llm_env) -> None:
     """链式分析失败：任务 failed（error_code/stage），转换成果保留；重试只重分析。"""
     cookies = login(make_user(Role.ANALYST))
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     llm_env(make_llm([500]))  # LLM 挂
 
     body = _upload(api, cookies)
@@ -474,7 +434,7 @@ def test_fresh_analyzing_task_not_reclaimed(db_engine) -> None:
 
 def test_reanalyze_single_increments_version(api, make_user, login, llm_env) -> None:
     cookies = login(make_user(Role.ANALYST))
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     llm_env(make_llm([json.dumps(raw, ensure_ascii=False)] * 3))
 
     body = _upload(api, cookies)
@@ -494,7 +454,7 @@ def test_reanalyze_single_increments_version(api, make_user, login, llm_env) -> 
 def test_reanalyze_permission_and_preconditions(api, make_user, login, llm_env, make_report) -> None:
     analyst = login(make_user(Role.ANALYST))
     reader = login(make_user(Role.READER))
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     llm_env(make_llm([json.dumps(raw, ensure_ascii=False)]))
 
     converted_id, _ = make_report(MD_WITH_ANCHORS)
@@ -517,7 +477,7 @@ def test_reanalyze_503_when_llm_not_configured(api, make_user, login, make_repor
 def test_batch_reanalyze_creates_tasks_and_reports_skips(api, make_user, login, llm_env, make_report) -> None:
     analyst = make_user(Role.ANALYST)
     cookies = login(analyst)
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     llm_env(make_llm([json.dumps(raw, ensure_ascii=False)] * 5))
 
     a_id, _ = make_report(MD_WITH_ANCHORS, title="批量A", owner=analyst)

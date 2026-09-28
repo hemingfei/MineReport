@@ -11,7 +11,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from test_analysis import make_llm
+from helpers import make_llm
 
 
 def _refresh(report_id: int) -> None:
@@ -134,6 +134,41 @@ def test_search_indexes_only_converted_files(api: TestClient, login, make_user, 
         search.refresh_search_vector(s, rid)
         s.commit()
     assert _ids(api.get("/api/reports", params={"q": "草稿"}, cookies=cookies).json()) == {rid}
+
+
+def test_search_body_takes_latest_converted_among_multiple(api: TestClient, login, make_user, make_report) -> None:
+    """多来源文件：正文索引只认最近转换完成者。规则单点 latest_converted_file_stmt
+    （与 /markdown、分析输入同源），本测试锁 _latest_body 列投影派生路径的口径。"""
+    import datetime as dt
+
+    from app.db import session_scope
+    from app.models import ReportFile
+
+    rid, fid = make_report(None)
+    base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    with session_scope() as s:
+        from app import search
+
+        f1 = s.get(ReportFile, fid)
+        f1.markdown_text = "旧文件的液冷正文。"
+        f1.converted_at = base
+        f2 = ReportFile(
+            report_id=rid,
+            storage_key=f"reports/{rid}/files/2/a.pdf",
+            filename="a.pdf",
+            content_type="application/pdf",
+            size_bytes=1000,
+            file_sha256="1" * 64,
+            uploaded_by=f1.uploaded_by,
+            markdown_text="新文件的算力正文。",
+            converted_at=base + dt.timedelta(hours=1),
+        )
+        s.add(f2)
+        search.refresh_search_vector(s, rid)
+        s.commit()
+    cookies = login(make_user("reader"))
+    assert api.get("/api/reports", params={"q": "旧文件"}, cookies=cookies).json()["total"] == 0
+    assert _ids(api.get("/api/reports", params={"q": "算力"}, cookies=cookies).json()) == {rid}
 
 
 def test_search_follows_current_analysis_version(api: TestClient, login, make_user, make_report, llm_env) -> None:

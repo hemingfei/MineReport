@@ -227,7 +227,7 @@ def login(api):
 @pytest.fixture()
 def llm_env(tweak_settings, monkeypatch):
     """配置 LLM 环境开关 + 把 build_llm 换成 mock（worker/API 路径的注入口）。
-    （#15 建立，#16 测试复用；make_llm 见 tests/test_analysis.py。）"""
+    （#15 建立，#16 测试复用；make_llm 见 tests/helpers.py。）"""
 
     def _install(client) -> object:
         tweak_settings(
@@ -241,6 +241,38 @@ def llm_env(tweak_settings, monkeypatch):
         return client
 
     return _install
+
+
+@pytest.fixture()
+def make_theme(db_engine):
+    """直接入库造题材（默认 AI算力 + 同义词[算力] + active + manual）。
+    原双份（test_scheduler.make_theme 与 test_subscriptions_api.active_theme）
+    经架构保养⑦统一至此。"""
+
+    def _make(name="AI算力", synonyms=("算力",), status="active"):
+        from app.db import session_scope
+        from app.models import Theme
+        from app.themes import normalize_theme_name
+
+        with session_scope() as s:
+            t = Theme(
+                name=name,
+                name_norm=normalize_theme_name(name),
+                status=status,
+                source="manual",
+                synonyms=list(synonyms),
+            )
+            s.add(t)
+            s.commit()
+            return t.id
+
+    return _make
+
+
+@pytest.fixture()
+def theme(make_theme):
+    """每测试一个默认题材（AI算力 + 同义词[算力]）；需要多题材/其他状态时用 make_theme。"""
+    return make_theme()
 
 
 @pytest.fixture()

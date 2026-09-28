@@ -414,9 +414,9 @@ def test_spike_regression_inferred_code_polls_queue_end_to_end(
     import json as _json
 
     from app import worker
-    from test_analysis import DONGWU, MD_WITH_ANCHORS, fixture_json, make_llm
+    from helpers import DONGWU_JSON, MD_WITH_ANCHORS, fixture_json, make_llm
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["targets"] = [
         {"code": "600519", "name": "贵州茅台", "stance": "推荐", "view": "v", "has_forecast": True},
     ]
@@ -496,9 +496,9 @@ def test_match_endpoints_permissions_and_validation(
     import json as _json
 
     from app import worker
-    from test_analysis import DONGWU, MD_WITH_ANCHORS, fixture_json, make_llm
+    from helpers import DONGWU_JSON, MD_WITH_ANCHORS, fixture_json, make_llm
 
-    raw = fixture_json(DONGWU)
+    raw = fixture_json(DONGWU_JSON)
     raw["targets"] = [{"code": None, "name": "不存在的公司", "stance": "提及"}]
     llm_env(make_llm([_json.dumps(raw, ensure_ascii=False)]))
     report_id, _ = make_report(MD_WITH_ANCHORS)
