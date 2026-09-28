@@ -20,3 +20,7 @@ class PipelineError(Exception):
 class AnalysisError(PipelineError):
     """分析管道失败：llm_not_configured / markdown_missing / llm_http /
     llm_invalid_json / schema_invalid / report_missing 等。"""
+
+
+class MasterDataError(PipelineError):
+    """主数据导入失败（#16）：akshare 接口超时 / 申万 xls 拉取失败 / 行数据非法等。"""

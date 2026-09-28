@@ -46,6 +46,7 @@ export interface Report {
   created_by: number;
   created_at: string;
   files: ReportFile[];
+  current_analysis_id?: number | null;
 }
 
 export interface ReportList {
@@ -64,6 +65,67 @@ export interface ReportCreated {
 
 export interface AppConfig {
   allow_reader_download: boolean;
+}
+
+export interface TargetSummary {
+  code: string;
+  name: string;
+  exchange: string;
+  sw_l1_name: string | null;
+  sw_l2_name: string | null;
+  sw_l3_name: string | null;
+}
+
+export interface TargetList {
+  items: TargetSummary[];
+}
+
+export interface TargetCandidate {
+  code: string;
+  name: string;
+  exchange: string;
+  sw_l1_name: string | null;
+  score: number;
+}
+
+/** 人工确认队列条目（reason: inferred_code | code_not_in_master | multi_candidate | no_hit） */
+export interface TargetMatchItem {
+  id: number;
+  report_id: number;
+  report_title: string;
+  analysis_id: number;
+  raw_name: string;
+  raw_code: string | null;
+  reason: string;
+  status: string;
+  candidates: TargetCandidate[];
+  created_at: string;
+}
+
+export interface TargetMatchList {
+  items: TargetMatchItem[];
+}
+
+/** 研报当前分析的标的关联（#16 回写产物） */
+export interface ReportTargetItem {
+  seq: number;
+  raw_name: string;
+  raw_code: string | null;
+  target_code: string | null;
+  target_name: string | null;
+  exchange: string | null;
+  sw_l1_name: string | null;
+  stance: string;
+  view: string;
+  has_forecast: boolean;
+  code_source: string | null;
+  match_id: number | null;
+  match_status: string | null;
+}
+
+export interface ReportTargets {
+  analysis_id: number | null;
+  items: ReportTargetItem[];
 }
 
 export interface Invitation {
@@ -198,4 +260,32 @@ export const api = {
 
   /** 正文 markdown（text/markdown 响应）；未就绪时后端返回 404 */
   getReportMarkdown: (id: number) => request<string>(`/api/reports/${id}/markdown`),
+
+  // ---------- targets（#16：主数据 + 人工确认队列） ----------
+
+  searchTargets: (q: string, limit: number = 20) =>
+    request<TargetList>(`/api/targets${qs({ q, limit })}`),
+
+  listTargetMatches: () => request<TargetMatchList>("/api/targets/matches"),
+
+  /** 确认队列条目到指定 6 位代码（必须已在主数据中） */
+  confirmTargetMatch: (matchId: number, code: string) =>
+    request<TargetMatchItem>(`/api/targets/matches/${matchId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  /** 驳回：认定该串不是真实标的（LLM 幻觉/指数名等） */
+  dismissTargetMatch: (matchId: number) =>
+    request<void>(`/api/targets/matches/${matchId}/dismiss`, { method: "POST" }),
+
+  /** 当前分析的标的关联（含瀑布落成与队列状态） */
+  getReportTargets: (reportId: number) => request<ReportTargets>(`/api/reports/${reportId}/targets`),
+
+  /** 触发主数据全量导入（admin，幂等；withNameHistory 开启逐股曾用名回填，较慢） */
+  importTargets: (withNameHistory: boolean = false) =>
+    request<{ task_id: number }>("/api/targets/import", {
+      method: "POST",
+      body: JSON.stringify({ with_name_history: withNameHistory }),
+    }),
 };

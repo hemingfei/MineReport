@@ -314,6 +314,72 @@ select:focus {
   background: var(--bg);
 }
 
+/* ---------- 标的确认队列（#16） ---------- */
+
+.chip-warn {
+  background: #fdf6e9;
+  color: #9a6b0c;
+  border-color: #eddcbb;
+}
+
+.match-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.match-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.match-head > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.match-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.candidate-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.match-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.match-actions input {
+  width: 110px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.code-picker input {
+  width: 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 .spinner {
   width: 12px;
   height: 12px;

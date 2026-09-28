@@ -16,7 +16,7 @@ from typing import Callable
 
 from sqlalchemy import and_, case, func, or_, select, update
 
-from . import analysis, db
+from . import analysis, db, masterdata
 from .config import get_settings
 from .conversion import (
     ConversionError,
@@ -24,7 +24,7 @@ from .conversion import (
     convert_to_markdown,
     preflight_pdf,
 )
-from .errors import AnalysisError
+from .errors import AnalysisError, MasterDataError
 from .models import ReportFile, ResearchReport, Task, TaskStatus
 from .storage import get_storage
 
@@ -103,6 +103,8 @@ def run_once() -> Task | None:
         _mark_failed(task.id, e.error_code, e.message, getattr(e, "stage", None))
     except AnalysisError as e:
         _mark_failed(task.id, e.error_code, e.message, e.stage or "analyze")
+    except MasterDataError as e:
+        _mark_failed(task.id, e.error_code, e.message, "import_targets")
     except Exception:
         log.exception("task %s 处理异常", task.id)
         _mark_failed(task.id, "internal", "处理异常，详见 worker 日志", None)
@@ -249,6 +251,26 @@ def handle_analyze(task_id: int) -> None:
 
 
 HANDLERS["analyze"] = handle_analyze
+
+
+# ---------- import_targets：标的主数据全量导入（#16） ----------
+
+def handle_import_targets(task_id: int) -> None:
+    """akshare 全量 + 申万 xls 全史 → 幂等 upsert；with_name_history 开启时慢速回填曾用名。"""
+    with db.SessionLocal() as session:
+        task = session.get(Task, task_id)
+        payload = dict(task.payload or {})
+        stocks, industry_rows = masterdata.fetch_all()
+        name_changes = None
+        if payload.get("with_name_history"):
+            name_changes = masterdata.fetch_name_changes([s.code for s in stocks])
+        stats = masterdata.import_master_data(session, stocks, industry_rows, name_changes)
+        task.status = TaskStatus.DONE
+        task.result = stats
+        session.commit()
+
+
+HANDLERS["import_targets"] = handle_import_targets
 
 
 def main() -> None:

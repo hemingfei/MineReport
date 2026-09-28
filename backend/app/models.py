@@ -1,6 +1,8 @@
 """SQLAlchemy 模型。Task 为 API 与 worker 共享的任务队列载体；User/Invitation/UserSession
 支撑邀请制认证；ResearchReport/ReportFile 支撑研报入库（ADR-0001 组合键 + 软删除）；
-PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）。"""
+PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）；
+Target/TargetIndustryHistory/TargetMatch/AnalysisTarget 支撑标的主数据、规范化瀑布与
+人工确认队列（#16）。"""
 
 import datetime as dt
 
@@ -240,3 +242,111 @@ class ReportTag(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class Target(Base):
+    """标的主数据（#16）：akshare 全量代码+名称 + 申万 2021 行业快照（含生效日期）+ 曾用名。
+
+    身份 = 6 位代码（交易所由代码前缀确定性推导，不单独入库来源）。
+    行业字段是"当前分类"快照：来自官网 xls 全史表的每股最新一行，名称经静态码表
+    sw2021_l3.csv join（分类标准码→名称的桥，见 research/masterdata/sw2021_bridge.py）。
+    匹配词典 = 当前简称 + 曾用名（historical_names），都经 normalize_name 归一。
+    """
+
+    __tablename__ = "targets"
+    __table_args__ = (Index("ix_targets_name_norm", "name_norm"),)
+
+    code: Mapped[str] = mapped_column(String(6), primary_key=True, comment="6 位股票代码")
+    name: Mapped[str] = mapped_column(String(64), comment="当前简称")
+    name_norm: Mapped[str] = mapped_column(String(64), comment="归一简称（剥 ST/空格/全角/后缀）")
+    exchange: Mapped[str] = mapped_column(String(8), comment="SH | SZ | BJ（代码前缀推导）")
+    sw_l1_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    sw_l1_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sw_l2_code: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    sw_l2_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sw_l3_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    sw_l3_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sw_effective_date: Mapped[dt.date | None] = mapped_column(
+        Date, nullable=True, comment="当前行业分类的计入日期（快照生效日期）"
+    )
+    historical_names: Mapped[list | None] = mapped_column(
+        JSON, nullable=True, comment="曾用名列表（akshare 新浪曾用名回填）"
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TargetIndustryHistory(Base):
+    """申万行业分类全史（官网 xls 原样，含退市股）：研报是历史文档，回溯需知"当时"分类。"""
+
+    __tablename__ = "target_industry_history"
+    __table_args__ = (
+        Index("uq_industry_history", "code", "effective_date", "industry_code", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(6), comment="6 位股票代码（不外键：xls 含未上市股之外的存量行）")
+    effective_date: Mapped[dt.date] = mapped_column(Date, comment="计入日期")
+    industry_code: Mapped[str] = mapped_column(String(6), comment="申万 2021 分类标准码")
+    source_updated_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="官网 xls 的更新日期"
+    )
+
+
+class TargetMatch(Base):
+    """人工确认队列（规范化瀑布终点，#16）。
+
+    一条 = 某版分析里的一个未能自动落成的标的。candidates 是入队时的瀑布建议快照
+    （[{code,name,exchange,sw_l1_name,score}]），主数据重导不会刷新它——队列语义是
+    "当时的待办"，确认动作才写终值。确认/驳回后 code_source 见关联行。
+    """
+
+    __tablename__ = "target_matches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    raw_name: Mapped[str] = mapped_column(String(128), comment="LLM 提取的原始名称串")
+    raw_code: Mapped[str | None] = mapped_column(String(6), nullable=True, comment="LLM 给的 6 位码（可能凭记忆）")
+    reason: Mapped[str] = mapped_column(
+        String(32),
+        comment="入队原因：inferred_code | code_not_in_master | multi_candidate | no_hit",
+    )
+    candidates: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="瀑布建议候选")
+    status: Mapped[str] = mapped_column(String(16), comment="pending | confirmed | dismissed | superseded")
+    resolved_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    resolved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AnalysisTarget(Base):
+    """分析↔标的关联（#16 回写）：result JSON 是提取时审计快照，本表是可关联可查询的投影。
+
+    code_source 在此表的语义：text=代码在正文或由正文名称经确定性瀑布命中（可从文本
+    证据机械复现，非模型记忆）；inferred=LLM 凭记忆补；manually_confirmed=人工确认。
+    与 result JSON 里的提取时 code_source（仅区分 text/inferred）是两个时点。
+    """
+
+    __tablename__ = "analysis_targets"
+    __table_args__ = (Index("uq_analysis_targets_seq", "analysis_id", "seq", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True, comment="冗余：按标的过滤研报免 join")
+    seq: Mapped[int] = mapped_column(Integer, comment="在 result.targets 中的序位")
+    target_code: Mapped[str | None] = mapped_column(
+        ForeignKey("targets.code"), nullable=True, comment="落成的规范代码；NULL=仍在队列"
+    )
+    match_id: Mapped[int | None] = mapped_column(
+        ForeignKey("target_matches.id"), nullable=True, comment="对应队列条目（自动落成时为 NULL）"
+    )
+    raw_name: Mapped[str] = mapped_column(String(128))
+    raw_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    stance: Mapped[str] = mapped_column(String(8), comment="推荐|提及|回避")
+    view: Mapped[str] = mapped_column(Text, default="")
+    has_forecast: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    code_source: Mapped[str | None] = mapped_column(String(24), nullable=True)

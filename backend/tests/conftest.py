@@ -195,3 +195,72 @@ def login(api):
         return {"mr_session": r.cookies["mr_session"]}
 
     return _login
+
+
+@pytest.fixture()
+def llm_env(tweak_settings, monkeypatch):
+    """配置 LLM 环境开关 + 把 build_llm 换成 mock（worker/API 路径的注入口）。
+    （#15 建立，#16 测试复用；make_llm 见 tests/test_analysis.py。）"""
+
+    def _install(client) -> object:
+        tweak_settings(
+            llm_base_url="https://llm-mock.invalid/v1",
+            llm_api_key="pw-" + secrets.token_hex(10),
+            llm_model="mock-llm",
+        )
+        import app.analysis as analysis_mod
+
+        monkeypatch.setattr(analysis_mod, "build_llm", lambda settings=None: client)
+        return client
+
+    return _install
+
+
+@pytest.fixture()
+def make_report(db_engine, make_user):
+    """直接入库造"已转换完成"的研报（跳过上传/转换，直测分析与 API 层）。
+    默认标题带随机后缀避开组合键唯一约束；owner 指定入库人（默认另造 analyst）。"""
+
+    def _make(
+        markdown: str | None,
+        *,
+        title: str | None = None,
+        broker: str = "测试券商",
+        owner=None,
+    ):
+        import datetime as dt
+        import uuid
+
+        from app.conversion import normalize_title
+        from app.db import SessionLocal
+        from app.models import ReportFile, ResearchReport, Role
+
+        owner = owner or make_user(Role.ANALYST)
+        title = title or f"测试研报-{uuid.uuid4().hex[:8]}"
+        with SessionLocal() as s:
+            report = ResearchReport(
+                title=title,
+                title_norm=normalize_title(title),
+                broker=broker,
+                publish_date=dt.date(2024, 12, 31),
+                created_by=owner.id,
+            )
+            s.add(report)
+            s.flush()
+            converted = markdown is not None
+            f = ReportFile(
+                report_id=report.id,
+                storage_key=f"reports/{report.id}/files/1/a.pdf",
+                filename="a.pdf",
+                content_type="application/pdf",
+                size_bytes=1000,
+                file_sha256="0" * 64,
+                uploaded_by=owner.id,
+                markdown_text=markdown,
+                converted_at=dt.datetime.now(dt.timezone.utc) if converted else None,
+            )
+            s.add(f)
+            s.commit()
+            return report.id, f.id
+
+    return _make

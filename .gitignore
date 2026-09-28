@@ -4,8 +4,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 
-# 本地数据卷（compose 挂载）
-data/
+# 本地数据卷（compose 挂载，仅仓库根；backend/app/data 的静态 fixture 不受影响）
+/data/
 
 # 环境与凭据（另有 .git/info/exclude 排除 .env）
 .env

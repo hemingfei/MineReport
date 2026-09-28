@@ -28,6 +28,7 @@ from .config import Settings, get_settings
 from .errors import AnalysisError
 from .llm import LLMClient, parse_llm_json
 from .models import Analysis, PromptTemplate, ReportFile, ResearchReport
+from .targets import link_analysis_targets
 
 # ---------- prompt v1（spike fulltext 胜出策略，枚举对齐 spec 终版） ----------
 
@@ -426,4 +427,6 @@ def run_analysis(
     session.add(analysis)
     session.flush()
     report.current_analysis_id = analysis.id
+    # #16 回写：标的原始串经规范化瀑布落成 analysis_targets 关联（未落成的进人工确认队列）
+    link_analysis_targets(session, report, analysis)
     return analysis

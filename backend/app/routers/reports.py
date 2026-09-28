@@ -28,7 +28,20 @@ from ..auth import require_role
 from ..config import get_settings
 from ..conversion import SUPPORTED_EXTENSIONS, normalize_title
 from ..db import get_db
-from ..models import Analysis, ReportFile, ReportTag, ResearchReport, Role, Tag, Task, TaskStatus, User
+from ..models import (
+    Analysis,
+    AnalysisTarget,
+    ReportFile,
+    ReportTag,
+    ResearchReport,
+    Role,
+    Tag,
+    Target as TargetRow,
+    TargetMatch,
+    Task,
+    TaskStatus,
+    User,
+)
 from ..storage import get_storage
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -551,6 +564,76 @@ def list_analyses(
         items=[AnalysisOut.model_validate(a) for a in items],
         current_analysis_id=report.current_analysis_id,
     )
+
+
+class AnalysisTargetOut(BaseModel):
+    seq: int
+    raw_name: str
+    raw_code: str | None
+    target_code: str | None
+    target_name: str | None = None
+    exchange: str | None = None
+    sw_l1_name: str | None = None
+    stance: str
+    view: str
+    has_forecast: bool
+    code_source: str | None
+    match_id: int | None
+    match_status: str | None = None
+
+
+class ReportTargetsOut(BaseModel):
+    analysis_id: int | None
+    items: list[AnalysisTargetOut]
+
+
+@router.get("/{report_id}/targets", response_model=ReportTargetsOut)
+def list_report_targets(
+    report_id: int,
+    user: User = Depends(require_role(Role.READER)),
+    db: OrmSession = Depends(get_db),
+) -> ReportTargetsOut:
+    """当前分析的标的关联（#16 回写产物）：瀑布落成 + 队列状态，主数据名称/行业随行。"""
+    report = _get_active_report(db, report_id)
+    if report.current_analysis_id is None:
+        return ReportTargetsOut(analysis_id=None, items=[])
+    links = db.scalars(
+        select(AnalysisTarget)
+        .where(AnalysisTarget.analysis_id == report.current_analysis_id)
+        .order_by(AnalysisTarget.seq)
+    ).all()
+    master = {
+        t.code: t
+        for t in db.scalars(
+            select(TargetRow).where(TargetRow.code.in_([l.target_code for l in links if l.target_code]))
+        )
+    }
+    matches = {
+        m.id: m
+        for m in db.scalars(
+            select(TargetMatch).where(TargetMatch.id.in_([l.match_id for l in links if l.match_id]))
+        )
+    }
+    items = []
+    for l in links:
+        row = master.get(l.target_code) if l.target_code else None
+        match = matches.get(l.match_id) if l.match_id else None
+        items.append(AnalysisTargetOut(
+            seq=l.seq,
+            raw_name=l.raw_name,
+            raw_code=l.raw_code,
+            target_code=l.target_code,
+            target_name=row.name if row else None,
+            exchange=row.exchange if row else None,
+            sw_l1_name=row.sw_l1_name if row else None,
+            stance=l.stance,
+            view=l.view,
+            has_forecast=l.has_forecast,
+            code_source=l.code_source,
+            match_id=l.match_id,
+            match_status=match.status if match else None,
+        ))
+    return ReportTargetsOut(analysis_id=report.current_analysis_id, items=items)
 
 
 # ---------- 自由 tag（#15） ----------

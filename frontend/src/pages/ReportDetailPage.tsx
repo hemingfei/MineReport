@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
-import { ApiError, ROLE_RANK, api, humanizeError, type Report } from "../api";
+import { ApiError, ROLE_RANK, api, humanizeError, type Report, type ReportTargetItem } from "../api";
 import { useAuth } from "../auth";
 import { formatBytes, formatDate, formatDateTime } from "../format";
 import { extractHeadings } from "../markdown";
@@ -46,6 +46,89 @@ function MarkdownView({ markdown }: { markdown: string }) {
     >
       {markdown}
     </Markdown>
+  );
+}
+
+const STANCE_LABEL: Record<string, string> = { 推荐: "重点推荐", 提及: "提及", 回避: "回避" };
+const CODE_SOURCE_LABEL: Record<string, string> = {
+  text: "文本/瀑布",
+  inferred: "待人工确认",
+  manually_confirmed: "人工确认",
+};
+
+/** 当前分析的标的面板（#16 回写产物）：落成代码 + 主数据行业 + 队列状态。 */
+function TargetsPanel({ reportId }: { reportId: number }) {
+  const [items, setItems] = useState<ReportTargetItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await api.getReportTargets(reportId);
+        if (!cancelled) {
+          setItems(r.items);
+          setLoaded(true);
+        }
+      } catch {
+        if (!cancelled) setLoaded(true); // 面板静默降级，不打断阅读
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reportId]);
+
+  if (!loaded || items.length === 0) return null;
+  return (
+    <div className="card files-card">
+      <h2 className="section-title">分析标的（{items.length}）</h2>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>标的</th>
+              <th>代码</th>
+              <th>申万一级</th>
+              <th>观点</th>
+              <th>代码来源</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((t) => (
+              <tr key={t.seq} className={t.target_code ? undefined : "row-muted"}>
+                <td>{t.target_name ?? t.raw_name}</td>
+                <td className="mono">
+                  {t.target_code ?? (t.raw_code ? `${t.raw_code}?` : "—")}
+                </td>
+                <td>{t.sw_l1_name ?? "—"}</td>
+                <td>
+                  <span className={`chip ${t.stance === "推荐" ? "chip-ok" : "chip-muted"}`}>
+                    {STANCE_LABEL[t.stance] ?? t.stance}
+                  </span>
+                  {t.view && <span className="hint"> {t.view}</span>}
+                </td>
+                <td>
+                  {t.code_source ? (
+                    <span className={`chip ${t.code_source === "inferred" ? "chip-warn" : "chip-muted"}`}>
+                      {CODE_SOURCE_LABEL[t.code_source] ?? t.code_source}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {items.some((t) => t.match_status === "pending") && (
+        <p className="hint">
+          有标的待人工确认，请到 <Link to="/targets">标的确认队列</Link> 处理。
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -192,6 +275,8 @@ export function ReportDetailPage() {
           </ul>
         </div>
       )}
+
+      {report && <TargetsPanel reportId={report.id} />}
 
       {error && <p className="form-error">{error}</p>}
       {pending && (

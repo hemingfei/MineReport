@@ -10,6 +10,7 @@ import {
   RegisterPage,
   ReportDetailPage,
   ReportsPage,
+  TargetQueuePage,
   UploadPage,
 } from "./pages";
 import "./styles.css";
@@ -35,6 +36,14 @@ const router = createBrowserRouter([
         ),
       },
       { path: "reports/:id", element: <ReportDetailPage /> },
+      {
+        path: "targets",
+        element: (
+          <RequireRole min="analyst">
+            <TargetQueuePage />
+          </RequireRole>
+        ),
+      },
       {
         path: "invitations",
         element: (
