@@ -10,7 +10,8 @@
 - 枚举漂移兜底：LLM 偶尔回吐 stance=增持 这类训练词，按同义表归一到 spec 枚举。
 - prompt 模板版本化入库（prompt_templates），重跑记录 prompt_version。
 
-题材/标的以原始字符串暂存于 result，受控词表与主数据规范化由 #16/#17 接入。
+题材/标的原始串仍完整暂存于 result（提取时审计快照），规范化投影由 #16（标的瀑布）
+与 #17（题材词表关联）在落库后同事务回写。
 """
 
 from __future__ import annotations
@@ -27,8 +28,9 @@ from sqlalchemy.orm import Session as OrmSession
 from .config import Settings, get_settings
 from .errors import AnalysisError
 from .llm import LLMClient, parse_llm_json
-from .models import Analysis, PromptTemplate, ReportFile, ResearchReport
+from .models import Analysis, AnalysisAuthor, PromptTemplate, ReportFile, ResearchReport
 from .targets import link_analysis_targets
+from .themes import link_analysis_themes
 
 # ---------- prompt v1（spike fulltext 胜出策略，枚举对齐 spec 终版） ----------
 
@@ -429,4 +431,35 @@ def run_analysis(
     report.current_analysis_id = analysis.id
     # #16 回写：标的原始串经规范化瀑布落成 analysis_targets 关联（未落成的进人工确认队列）
     link_analysis_targets(session, report, analysis)
+    # #17 回写：题材关联受控词表（在册直连/未知进待审），分析师署名落 analysis_authors 投影
+    link_analysis_themes(session, report, analysis)
+    _link_analysis_authors(session, report, analysis)
     return analysis
+
+
+def _link_analysis_authors(
+    session: OrmSession, report: ResearchReport, analysis: Analysis
+) -> list[AnalysisAuthor]:
+    """result.authors 原始串落投影行（覆盖查询用，#17）。cert 缺失存 NULL。"""
+    links: list[AnalysisAuthor] = []
+    seq = 0
+    for a in (analysis.result or {}).get("authors") or []:
+        if not isinstance(a, dict):
+            continue
+        name = str(a.get("name") or "").strip()
+        if not name:
+            continue
+        cert = a.get("cert")
+        links.append(
+            AnalysisAuthor(
+                analysis_id=analysis.id,
+                report_id=report.id,
+                seq=seq,
+                name=name,
+                cert=str(cert).strip() or None if cert else None,
+            )
+        )
+        seq += 1
+    session.add_all(links)
+    session.flush()
+    return links

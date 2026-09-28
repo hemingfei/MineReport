@@ -11,6 +11,8 @@ import {
   ReportDetailPage,
   ReportsPage,
   TargetQueuePage,
+  ThemeDetailPage,
+  ThemesPage,
   UploadPage,
 } from "./pages";
 import "./styles.css";
@@ -36,6 +38,8 @@ const router = createBrowserRouter([
         ),
       },
       { path: "reports/:id", element: <ReportDetailPage /> },
+      { path: "themes", element: <ThemesPage /> },
+      { path: "themes/:id", element: <ThemeDetailPage /> },
       {
         path: "targets",
         element: (

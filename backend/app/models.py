@@ -2,7 +2,8 @@
 支撑邀请制认证；ResearchReport/ReportFile 支撑研报入库（ADR-0001 组合键 + 软删除）；
 PromptTemplate/Analysis/Tag/ReportTag 支撑分析管道（版本链 + 审计）与自由 tag（#15）；
 Target/TargetIndustryHistory/TargetMatch/AnalysisTarget 支撑标的主数据、规范化瀑布与
-人工确认队列（#16）。"""
+人工确认队列（#16）；Theme/ReportTheme/ThemeMembership/AnalysisAuthor 支撑题材受控
+词表治理、研报/标的关联与分析师覆盖查询（#17）。"""
 
 import datetime as dt
 
@@ -350,3 +351,98 @@ class AnalysisTarget(Base):
     view: Mapped[str] = mapped_column(Text, default="")
     has_forecast: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     code_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
+
+class Theme(Base):
+    """题材受控词表（#17）：状态机 待审 → 在册 → 合并/停用；带定义与同义词组。
+
+    身份 = name_norm（NFKC + 去空白，"AI算力"与"AI 算力"同一条目）；seed_code 是种子
+    来源的稳定锚点（东财 BKxxxx / 申万 l2_code），人工与 LLM 提议为 NULL。合并后
+    merged_into_id 指向去向题材，原名与同义词并入去向的同义词组（"AI算力"与"算力"
+    不各立门户）。
+    """
+
+    __tablename__ = "themes"
+    __table_args__ = (Index("uq_themes_name_norm", "name_norm", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), comment="展示名")
+    name_norm: Mapped[str] = mapped_column(String(64), comment="归一名（NFKC+去空白），唯一")
+    status: Mapped[str] = mapped_column(String(16), comment="pending | active | merged | retired")
+    definition: Mapped[str] = mapped_column(Text, default="", comment="定义（审核时可补）")
+    synonyms: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="同义词组（含合并并入的原名）")
+    source: Mapped[str] = mapped_column(
+        String(16), comment="analysis | manual | seed_em | seed_sw"
+    )
+    seed_code: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="种子锚点：东财 BKxxxx / 申万 l2_code；提议类为 NULL"
+    )
+    proposed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    merged_into_id: Mapped[int | None] = mapped_column(
+        ForeignKey("themes.id"), nullable=True, comment="合并去向（status=merged 时非空）"
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ReportTheme(Base):
+    """分析↔题材关联（#17 回写）：result JSON 是提取时审计快照，本表是可查询投影。
+
+    theme_id 非空即已关联词表（在册直连 / 待审提议均落行）；题材浏览与覆盖查询
+    按 reports.current_analysis_id 只看当前版。合并题材时 theme_id 随迁。
+    """
+
+    __tablename__ = "report_themes"
+    __table_args__ = (Index("uq_report_themes_seq", "analysis_id", "seq", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True, comment="冗余：按题材过滤研报免 join")
+    seq: Mapped[int] = mapped_column(Integer, comment="在 result.themes 中的序位（跳过空名后紧凑编号）")
+    theme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("themes.id"), nullable=True, comment="关联的词表条目；NULL=未能关联（理论上不出现）"
+    )
+    raw_name: Mapped[str] = mapped_column(String(128), comment="LLM 提取的原始题材词")
+    reason: Mapped[str] = mapped_column(Text, default="", comment="一句话归属依据（提取时快照）")
+
+
+class ThemeMembership(Base):
+    """题材成员（spec 数据模型）：题材↔标的中间实体，source ∈ {seed, analysis, manual}。
+
+    joined_at 是首次入库日期（重导入不覆盖）；is_active=False 即退池（成分股移出、
+    行业改分类）。seed 同步只动 source=seed 的行，分析/人工成员不受种子重导影响。
+    """
+
+    __tablename__ = "theme_memberships"
+    __table_args__ = (Index("uq_theme_memberships", "theme_id", "target_code", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_id: Mapped[int] = mapped_column(ForeignKey("themes.id"), index=True)
+    target_code: Mapped[str] = mapped_column(ForeignKey("targets.code"))
+    source: Mapped[str] = mapped_column(String(16), comment="seed | analysis | manual")
+    joined_at: Mapped[dt.date] = mapped_column(Date, comment="首次入库日期")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="False=已退池")
+
+
+class AnalysisAuthor(Base):
+    """分析↔分析师投影（#17）：result.authors 原始串落行，覆盖查询（观点迁移追踪）用。
+
+    分析师主数据实体（执业证书号唯一键）由后续票按需收敛；本表按（name, cert）原串
+    聚合，覆盖查询支持按券商过滤以区分同名。
+    """
+
+    __tablename__ = "analysis_authors"
+    __table_args__ = (Index("uq_analysis_authors_seq", "analysis_id", "seq", unique=True),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True, comment="冗余：按分析师过滤研报免 join")
+    seq: Mapped[int] = mapped_column(Integer, comment="在 result.authors 中的序位")
+    name: Mapped[str] = mapped_column(String(128), comment="LLM 提取的署名原文")
+    cert: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="执业证书号（可缺）")

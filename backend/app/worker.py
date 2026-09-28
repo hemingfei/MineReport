@@ -16,7 +16,7 @@ from typing import Callable
 
 from sqlalchemy import and_, case, func, or_, select, update
 
-from . import analysis, db, masterdata
+from . import analysis, db, masterdata, themes
 from .config import get_settings
 from .conversion import (
     ConversionError,
@@ -104,7 +104,7 @@ def run_once() -> Task | None:
     except AnalysisError as e:
         _mark_failed(task.id, e.error_code, e.message, e.stage or "analyze")
     except MasterDataError as e:
-        _mark_failed(task.id, e.error_code, e.message, "import_targets")
+        _mark_failed(task.id, e.error_code, e.message, task.kind)
     except Exception:
         log.exception("task %s 处理异常", task.id)
         _mark_failed(task.id, "internal", "处理异常，详见 worker 日志", None)
@@ -271,6 +271,27 @@ def handle_import_targets(task_id: int) -> None:
 
 
 HANDLERS["import_targets"] = handle_import_targets
+
+
+# ---------- import_themes：题材种子导入（#17） ----------
+
+def handle_import_themes(task_id: int) -> None:
+    """东财概念（akshare，滤行情噪音）+ 申万二级（静态码表 + 主数据快照）→ 幂等 upsert。
+
+    依赖标的主数据已导入（成员 FK 指向 targets）；主数据未导时种子题材照建、成分为空，
+    主数据导入后重跑即可补齐。
+    """
+    with db.SessionLocal() as session:
+        task = session.get(Task, task_id)
+        em_seeds = themes.fetch_em_concept_seeds()
+        sw_seeds = themes.fetch_sw_l2_seeds(session)
+        stats = themes.import_theme_seeds(session, em_seeds + sw_seeds)
+        task.status = TaskStatus.DONE
+        task.result = stats
+        session.commit()
+
+
+HANDLERS["import_themes"] = handle_import_themes
 
 
 def main() -> None:

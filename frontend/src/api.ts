@@ -138,6 +138,109 @@ export interface Invitation {
   created_at: string;
 }
 
+// ---------- themes（#17：受控词表） ----------
+
+/** 题材状态机：pending 待审 → active 在册 → merged 合并 / retired 停用 */
+export type ThemeStatus = "pending" | "active" | "merged" | "retired";
+
+export const THEME_STATUS_LABEL: Record<ThemeStatus, string> = {
+  pending: "待审",
+  active: "在册",
+  merged: "已合并",
+  retired: "已停用",
+};
+
+export const THEME_SOURCE_LABEL: Record<string, string> = {
+  analysis: "LLM 提议",
+  manual: "人工提议",
+  seed_em: "东财概念",
+  seed_sw: "申万二级",
+};
+
+/** 题材状态 → 徽章样式（题材列表/详情页共用）。 */
+export function themeStatusChipClass(status: string): string {
+  if (status === "active") return "chip chip-ok";
+  if (status === "pending") return "chip chip-warn";
+  return "chip chip-muted";
+}
+
+export interface ThemeSummary {
+  id: number;
+  name: string;
+  status: ThemeStatus;
+  definition: string;
+  synonyms: string[];
+  source: string;
+  seed_code: string | null;
+  merged_into_id: number | null;
+  created_at: string;
+  report_count: number;
+  member_count: number;
+}
+
+export interface ThemeList {
+  items: ThemeSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ThemeReportItem {
+  id: number;
+  title: string;
+  broker: string;
+  publish_date: string;
+  current_analysis_id: number | null;
+}
+
+export interface ThemeReportList {
+  items: ThemeReportItem[];
+  total: number;
+}
+
+export interface ThemeMemberItem {
+  code: string;
+  name: string;
+  exchange: string;
+  sw_l1_name: string | null;
+  source: string;
+  joined_at: string;
+  is_active: boolean;
+}
+
+export interface ThemeMemberList {
+  items: ThemeMemberItem[];
+}
+
+export interface AuthorItem {
+  name: string;
+  cert: string | null;
+  broker: string | null;
+  report_count: number;
+}
+
+export interface CoverageThemeItem {
+  theme_id: number | null;
+  name: string;
+  status: ThemeStatus | null;
+  report_ids: number[];
+}
+
+export interface CoverageTargetItem {
+  code: string;
+  name: string;
+  report_ids: number[];
+}
+
+export interface AuthorCoverage {
+  name: string;
+  cert: string | null;
+  broker: string | null;
+  reports_total: number;
+  themes: CoverageThemeItem[];
+  targets: CoverageTargetItem[];
+}
+
 /** 会话失效（401）时广播，AuthProvider 监听后清空登录态。 */
 export const UNAUTHORIZED_EVENT = "mr:unauthorized";
 
@@ -288,4 +391,38 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ with_name_history: withNameHistory }),
     }),
+
+  // ---------- themes（#17） ----------
+
+  listThemes: (filters: { status?: ThemeStatus | "all"; q?: string; limit?: number; offset?: number }) =>
+    request<ThemeList>(`/api/themes${qs(filters)}`),
+
+  getTheme: (id: number) => request<ThemeSummary>(`/api/themes/${id}`),
+
+  /** 提议新题材（analyst 起；与在册/待审重名 409） */
+  proposeTheme: (body: { name: string; definition?: string; synonyms?: string[] }) =>
+    request<ThemeSummary>("/api/themes", { method: "POST", body: JSON.stringify(body) }),
+
+  /** 治理动作（admin）：approve / retire / merge */
+  patchTheme: (
+    id: number,
+    body: { action: "approve" | "retire" | "merge"; definition?: string; synonyms?: string[]; merge_into_id?: number },
+  ) => request<ThemeSummary>(`/api/themes/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  listThemeReports: (id: number, limit: number = 20, offset: number = 0) =>
+    request<ThemeReportList>(`/api/themes/${id}/reports${qs({ limit, offset })}`),
+
+  listThemeMembers: (id: number, activeOnly: boolean = false) =>
+    request<ThemeMemberList>(`/api/themes/${id}/members${qs({ active_only: activeOnly ? "true" : undefined })}`),
+
+  /** 触发题材种子导入（admin，幂等）：东财概念 + 申万二级骨架 */
+  importThemes: () => request<{ task_id: number }>("/api/themes/import", { method: "POST", body: "{}" }),
+
+  // ---------- authors（#17：覆盖查询） ----------
+
+  searchAuthors: (q: string) => request<{ items: AuthorItem[] }>(`/api/authors${qs({ q })}`),
+
+  /** 分析师覆盖：其研报所涉题材与标的（观点迁移追踪） */
+  getAuthorCoverage: (name: string, cert?: string, broker?: string) =>
+    request<AuthorCoverage>(`/api/authors/coverage${qs({ name, cert, broker })}`),
 };

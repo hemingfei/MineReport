@@ -33,6 +33,7 @@ from ..models import (
     AnalysisTarget,
     ReportFile,
     ReportTag,
+    ReportTheme,
     ResearchReport,
     Role,
     Tag,
@@ -43,6 +44,7 @@ from ..models import (
     User,
 )
 from ..storage import get_storage
+from ..themes import CURRENT_ANALYSIS_LINK
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -299,15 +301,14 @@ def list_reports(
     broker: str | None = None,
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
+    theme_id: int | None = None,
     limit: int = 20,
     offset: int = 0,
     user: User = Depends(require_role(Role.READER)),
     db: OrmSession = Depends(get_db),
 ) -> ReportListOut:
-    """列表：券商精确匹配 + 发布日期闭区间过滤 + limit/offset 分页。
-
-    题材/tag/标的/搜索词过滤由后续票接入（工单 #13 明确不在本票范围）。
-    """
+    """列表：券商精确匹配 + 发布日期闭区间 + 题材（当前分析版本的词表关联，#17）
+    过滤 + limit/offset 分页。tag/标的/搜索词过滤由后续票接入。"""
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     conds = [ResearchReport.deleted_at.is_(None)]
@@ -317,6 +318,14 @@ def list_reports(
         conds.append(ResearchReport.publish_date >= date_from)
     if date_to:
         conds.append(ResearchReport.publish_date <= date_to)
+    if theme_id is not None:
+        conds.append(
+            select(ReportTheme.id).where(
+                ReportTheme.theme_id == theme_id,
+                ReportTheme.report_id == ResearchReport.id,
+                CURRENT_ANALYSIS_LINK,
+            ).exists()
+        )
 
     total = db.scalar(select(func.count()).select_from(ResearchReport).where(*conds))
     reports = db.scalars(

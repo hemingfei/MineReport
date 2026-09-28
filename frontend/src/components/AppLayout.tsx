@@ -25,6 +25,7 @@ export function AppLayout() {
             <NavLink to="/" end>
               研报库
             </NavLink>
+            <NavLink to="/themes">题材</NavLink>
             {user && roleAtLeast(user.role, "analyst") && <NavLink to="/upload">上传</NavLink>}
             {user && roleAtLeast(user.role, "analyst") && <NavLink to="/targets">标的队列</NavLink>}
             {user && user.role === "admin" && <NavLink to="/invitations">邀请管理</NavLink>}
