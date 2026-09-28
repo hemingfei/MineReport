@@ -13,7 +13,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { formatDate, formatDateTime } from "../format";
-import { TASK_STATUS_LABEL, useTaskPolling } from "../task";
+import { taskStatusLabel, useTaskPolling, useTaskTerminal } from "../task";
 
 const REPORT_PAGE_SIZE = 20;
 
@@ -58,19 +58,16 @@ export function ThemeDetailPage() {
   }, [themeId, reportPage, activeOnly]);
 
   // 生成任务终态：成功跳结果页；失败亮错误（缓存命中在点击时直接跳转）
-  useEffect(() => {
-    if (genTask == null) return;
-    if (genTask.status === "done") {
-      const sid = Number(genTask.result?.synthesis_id ?? 0);
+  useTaskTerminal(genTask, "生成失败，请重试", {
+    onDone: (sid) => {
       setGenTaskId(null);
       if (sid > 0) navigate(`/syntheses/${sid}`);
-    } else if (genTask.status === "failed") {
+    },
+    onFailed: (text) => {
       setGenTaskId(null);
-      setGenError(
-        `${genTask.result?.error_code ?? "failed"}：${genTask.result?.error ?? "生成失败，请重试"}`,
-      );
-    }
-  }, [genTask, navigate]);
+      setGenError(text);
+    },
+  });
 
   if (!Number.isFinite(themeId)) {
     return <p className="form-error">无效的题材 id</p>;
@@ -140,7 +137,7 @@ export function ThemeDetailPage() {
               title="输入未变时命中缓存直接查看；重算请到结果页手动刷新"
             >
               {genTaskId != null
-                ? `生成中（${TASK_STATUS_LABEL[genTask?.status ?? "uploaded"]}）`
+                ? `生成中（${taskStatusLabel(genTask)}）`
                 : theme.latest_synthesis != null
                   ? "查看/重生成综合分析"
                   : "生成综合分析"}

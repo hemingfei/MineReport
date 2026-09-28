@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type DragEvent, type FormEvent } from "r
 import { Link } from "react-router-dom";
 import { api, humanizeError, type ReportCreated } from "../api";
 import { formatBytes } from "../format";
-import { TASK_STATUS_LABEL, useTaskPolling } from "../task";
+import { taskStatusLabel, useTaskPolling } from "../task";
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx"];
 
@@ -46,7 +46,7 @@ function TaskCard({ upload }: { upload: UploadItem }) {
         </span>
         <span className={`chip ${failed ? "chip-danger" : done ? "chip-ok" : "chip-muted"}`}>
           {done || failed ? "" : <span className="spinner" aria-hidden />}
-          {TASK_STATUS_LABEL[status]}
+          {taskStatusLabel(task)}
         </span>
       </div>
       <div className="task-card-body">

@@ -1,6 +1,8 @@
-/** 任务轮询 hook 与状态展示词表（spec：前端 3~5s 轮询）。 */
+/** 任务轮询 hook、终态处理与状态展示词表（spec：前端 3~5s 轮询）。
+ * 任务 result 的键契约（synthesis_id/error_code/error）与终态文案模板单点收敛于此，
+ * 页面不手拼。 */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Task, type TaskStatus } from "./api";
 
 export const TASK_POLL_INTERVAL_MS = 4000;
@@ -16,6 +18,44 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 export function isTerminal(status: TaskStatus): boolean {
   return status === "done" || status === "failed";
+}
+
+/** done 任务的产物 id 键契约（当前唯一取数键：synthesize → synthesis_id）；
+ * 非法/缺席归 0（页面以 >0 判可跳转）。 */
+export function taskResultId(task: Task): number {
+  return Number(task.result?.synthesis_id ?? 0) || 0;
+}
+
+/** failed 任务的单行错误文案（form-error 模板：error_code：error，缺省逐级兜底）。 */
+export function taskFailureText(task: Task, fallback: string): string {
+  return `${task.result?.error_code ?? "failed"}：${task.result?.error ?? fallback}`;
+}
+
+/** 按钮态状态词：任务尚未拉到（null）视作已入队；未知状态原样兜底。 */
+export function taskStatusLabel(task: Task | null): string {
+  const s = task?.status ?? "uploaded";
+  return TASK_STATUS_LABEL[s] ?? s;
+}
+
+/**
+ * 终态半场（与 useTaskPolling 的轮询半场配对）：done → onDone(产物 id)；
+ * failed → onFailed(错误文案)。taskId 的清理与后续动作留给页面回调。
+ * 终态只对同一个 task 对象触发一次；handlers 经 latest-ref 读取，无需 memo。
+ */
+export function useTaskTerminal(
+  task: Task | null,
+  failFallback: string,
+  handlers: { onDone: (resultId: number) => void; onFailed: (text: string) => void },
+) {
+  const latest = useRef({ failFallback, handlers });
+  latest.current = { failFallback, handlers };
+
+  useEffect(() => {
+    if (task == null) return;
+    if (task.status === "done") latest.current.handlers.onDone(taskResultId(task));
+    else if (task.status === "failed")
+      latest.current.handlers.onFailed(taskFailureText(task, latest.current.failFallback));
+  }, [task]);
 }
 
 /**

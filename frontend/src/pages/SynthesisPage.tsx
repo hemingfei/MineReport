@@ -10,7 +10,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { formatDate, formatDateTime } from "../format";
-import { TASK_STATUS_LABEL, useTaskPolling } from "../task";
+import { taskStatusLabel, useTaskPolling, useTaskTerminal } from "../task";
 
 /** 综合分析结果页（spec 用户故事 17~20）：共性结论/共识标的/分歧点，
  * 结论带原文引用回链（R 序位 → 研报详情）；版本切换 + 手动刷新。 */
@@ -46,21 +46,18 @@ export function SynthesisPage() {
   }, [synthesisId]);
 
   // 刷新任务终态：成功跳新版本，失败亮出错误（停留在当前版本）
-  useEffect(() => {
-    if (refreshTask == null) return;
-    if (refreshTask.status === "done") {
-      const newId = Number(refreshTask.result?.synthesis_id ?? 0);
+  useTaskTerminal(refreshTask, "刷新失败，请重试", {
+    onDone: (newId) => {
       setRefreshTaskId(null);
       if (newId > 0) {
         navigate(`/syntheses/${newId}`, { replace: true });
       }
-    } else if (refreshTask.status === "failed") {
+    },
+    onFailed: (text) => {
       setRefreshTaskId(null);
-      setRefreshError(
-        `${refreshTask.result?.error_code ?? "failed"}：${refreshTask.result?.error ?? "刷新失败，请重试"}`,
-      );
-    }
-  }, [refreshTask, navigate]);
+      setRefreshError(text);
+    },
+  });
 
   if (!Number.isFinite(synthesisId)) {
     return <p className="form-error">无效的综合分析 id</p>;
@@ -106,7 +103,7 @@ export function SynthesisPage() {
               disabled={refreshTaskId != null}
             >
               {refreshTaskId != null
-                ? `刷新中（${TASK_STATUS_LABEL[refreshTask?.status ?? "uploaded"]}）`
+                ? `刷新中（${taskStatusLabel(refreshTask)}）`
                 : "手动刷新"}
             </button>
           )}

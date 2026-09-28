@@ -14,7 +14,7 @@ import {
   type ThemeSummary,
 } from "../api";
 import { useAuth } from "../auth";
-import { TASK_STATUS_LABEL, useTaskPolling } from "../task";
+import { isTerminal, taskStatusLabel, useTaskPolling } from "../task";
 
 const PAGE_SIZE = 50;
 
@@ -313,7 +313,8 @@ export function ThemesPage() {
       .catch((err) => setPropError(humanizeError(err, "提议失败")));
   };
 
-  const importRunning = importTaskId !== null && importTask != null && !["done", "failed"].includes(importTask.status);
+  const importRunning =
+    importTaskId !== null && importTask != null && !isTerminal(importTask.status);
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
@@ -328,7 +329,7 @@ export function ThemesPage() {
             disabled={importRunning}
           >
             {importRunning
-              ? `导入${TASK_STATUS_LABEL[importTask!.status] ?? importTask!.status}…`
+              ? `导入${taskStatusLabel(importTask)}…`
               : "导入题材种子"}
           </button>
         )}
