@@ -296,3 +296,76 @@ jobs:
               "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}" \
               "${DOCKERHUB_USERNAME}/minereport-frontend:${GITHUB_REF_NAME}-arm64"
           fi
+
+  # tag 的 amd64 镜像（version + latest）推上 registry 后，触发服务器 Jenkins
+  # 拉取最新镜像滚动重启。与 publish-arm64 并行：VPS 只拉 amd64，不等清单合并。
+  deploy:
+    needs: publish-amd64
+    if: startsWith(github.ref, 'refs/tags/v') && needs.publish-amd64.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JENKINS_URL: ${{ secrets.JENKINS_URL }}
+      JENKINS_TOKEN: ${{ secrets.JENKINS_TOKEN }}
+    steps:
+      # 与 vpush 仓库 docker-publish.yml 的 jenkins 步骤同一套模式：POST 触发 →
+      # 轮询队列拿到 build 号 → 按字节增量回显 consoleText → 校验 result=SUCCESS，
+      # 保证「Actions 报失败 = 真的没部署」。
+      - name: 触发 Jenkins 部署并盯结果
+        run: |
+          set -euo pipefail
+          J="${JENKINS_URL%/}"
+          AUTH="openclaw:${JENKINS_TOKEN}"
+          JOB="minereport-deploy"
+
+          echo "==> queueing deploy build..."
+          rm -f /tmp/jenkins_hdrs
+          HTTP_CODE=$(curl -s -m 15 -X POST -D /tmp/jenkins_hdrs -o /dev/null \
+            -w '%{http_code}' -u "$AUTH" "$J/job/$JOB/build?delay=0sec") || true
+          LOC=$([ -f /tmp/jenkins_hdrs ] && tr -d '\r' < /tmp/jenkins_hdrs | awk 'tolower($1)=="location:"{print $2}' || true)
+          if [ -z "$LOC" ] || [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: trigger failed (HTTP $HTTP_CODE, location=$LOC)"
+            echo "       check JENKINS_URL/JENKINS_TOKEN secrets, job name '$JOB', and that the job has no parameters"
+            exit 1
+          fi
+
+          echo "==> deploy queued, waiting to start..."
+          BUILD_URL=""
+          for i in $(seq 1 300); do
+            BUILD_URL=$(curl -sf -u "$AUTH" "$LOC/api/json" \
+              | python3 -c 'import sys,json; print(json.load(sys.stdin).get("executable",{}).get("url",""))' 2>/dev/null || true)
+            [ -n "$BUILD_URL" ] && break
+            sleep 2
+          done
+          if [ -z "$BUILD_URL" ]; then
+            echo "ERROR: build did not start within ~10min (previous deploy still running? cancelling queued item)"
+            curl -s -m 15 -X POST -u "$AUTH" "$LOC/cancelItem" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          N=$(basename "$BUILD_URL")
+          echo "==> deploy build #${N} started: $J/job/$JOB/$N/"
+
+          # consoleText 全量拉取 + 按字节增量打印（Jenkins 无增量端点）；
+          # 轮询间隙单次 curl 失败按「本轮无输出」处理，避免抖动杀掉 watch
+          OFF=0
+          RESULT=""
+          for i in $(seq 1 200); do
+            if LOG=$(curl -sf -m 15 -u "$AUTH" "$J/job/$JOB/$N/consoleText"); then
+              SIZE=$(printf '%s' "$LOG" | wc -c)
+              if [ "$SIZE" -gt "$OFF" ]; then
+                printf '%s' "$LOG" | tail -c +"$((OFF+1))"
+                OFF=$SIZE
+              fi
+            fi
+            if R=$(curl -sf -m 15 -u "$AUTH" "$J/job/$JOB/$N/api/json?tree=building,result"); then
+              if printf '%s' "$R" | grep -q '"building"[ ]*:[ ]*false'; then
+                RESULT=$(printf '%s' "$R" | grep -o '"result"[ ]*:[ ]*"[^"]*"' | cut -d'"' -f4 || true)
+                break
+              fi
+            fi
+            sleep 3
+          done
+          [ -n "$RESULT" ] || { echo "ERROR: deploy finished without result (aborted?) or still running after ~10min"; exit 1; }
+          echo ""
+          echo "===== deploy result: $RESULT ====="
+          [ "$RESULT" = "SUCCESS" ] || exit 1
