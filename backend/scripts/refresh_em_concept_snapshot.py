@@ -23,8 +23,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import themes  # noqa: E402
+from app.errors import MasterDataError  # noqa: E402
 
 SNAPSHOT_PATH = themes.EM_SNAPSHOT_JSON
+
+_PROBE_HINT = (
+    'curl.exe -s -m 8 -o NUL -w "%{http_code}" '
+    '"https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=1&np=1'
+    '&fltt=2&invt=2&fid=f3&fs=m:90+t:3&fields=f12,f14"'
+)
 
 
 def main() -> None:
@@ -37,7 +44,16 @@ def main() -> None:
         existing = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))
         print(f"既有快照：{len(existing.get('concepts', []))} 个板块（generated_at={existing.get('generated_at')}）")
 
-    boards, seeds, failed = themes.fetch_em_concept_seeds(sleep=args.sleep)
+    try:
+        boards, seeds, failed = themes.fetch_em_concept_seeds(sleep=args.sleep)
+    except MasterDataError as e:
+        print(f"抓取失败：{e}")
+        print(
+            "东财 push2 对本机出口 IP 风控断连（冷却分钟级~小时级；同一宽带下换电脑无效，"
+            "封的是公网出口）。换公网出口（如手机热点）后先探测，返回 200 再重跑：\n"
+            f"  {_PROBE_HINT}"
+        )
+        sys.exit(1)
     payload = themes.merge_em_snapshot(existing, boards, seeds, failed)
 
     stale = sum(1 for c in payload["concepts"] if c.get("stale"))
