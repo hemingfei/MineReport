@@ -24,6 +24,7 @@ import datetime as dt
 import json
 import time
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -540,14 +541,20 @@ def _retry_fetch(desc: str, fn, retries: int = 3, wait: float = 2.0):
 
 
 def fetch_em_concept_seeds(
-    sleep: float = 1.0,
-) -> tuple[list[tuple[str, str]], list[ConceptSeed], list[str]]:
-    """东财概念板块列表 + 逐板块成分股（akshare）→ (板块全集, 成功种子, 失败板块名)。
+    sleep: float = 1.0, max_consecutive_failures: int = 8,
+    progress_cb: Callable[
+        [list[tuple[str, str]], int, int, list[ConceptSeed], list[str]], None
+    ] | None = None,
+) -> tuple[list[tuple[str, str]], list[ConceptSeed], list[str], bool]:
+    """东财概念板块列表 + 逐板块成分股（akshare）→ (板块全集, 成功种子, 失败板块名, 是否熔断)。
 
     板块全集不过滤（噪音在 load_em_concept_seeds 加载时滤，规则演化不用重抓）；
-    单板块失败重试后跳过不拖垮整批（与 merge_em_snapshot 配合，缺口重跑补齐）。
-    push2 按请求频率掐连接（按 IP，冷却分钟级以上），sleep 默认 1s（~400 板块
-    全程约 10 分钟），仍大面积失败就等冷却后重跑。
+    单板块失败重试后跳过不拖垮整批（与 merge_em_snapshot 配合，缺口重跑补齐）；
+    连续失败达 max_consecutive_failures 判为限流熔断提前收工（aborted=True，已抓
+    部分由调用方合并落盘）。progress_cb(板块全集, 已完成数, 总数, seeds, failed)
+    每板块回调一次，供脚本周期性落盘断点（长爬被杀不丢进度）。push2 按请求频率
+    掐连接且 IPv4/IPv6 分路计、被拒请求会给冷却期续费——慢爬（sleep≥5）比快爬更
+    易跑完；系统默认优先 IPv6（AAAA 在），IPv6 路径被常驻流量占热时须强制 IPv4。
     """
     import akshare as ak
 
@@ -562,7 +569,9 @@ def fetch_em_concept_seeds(
     boards = _retry_fetch("akshare stock_board_concept_name_em（东财概念列表）", _boards, wait=5.0)
     seeds: list[ConceptSeed] = []
     failed: list[str] = []
-    for i, (name, code) in enumerate(boards):
+    consecutive_fail = 0
+    aborted = False
+    for done, (name, code) in enumerate(boards, start=1):
         def _cons(name=name) -> list[str]:
             df = ak.stock_board_concept_cons_em(symbol=name)
             return [str(c) for c in df["代码"] if valid_code(str(c))]
@@ -571,11 +580,19 @@ def fetch_em_concept_seeds(
             members = _retry_fetch(f"东财概念「{name}」成分股", _cons, wait=5.0)
         except MasterDataError:
             failed.append(name)  # 单板块失败不拖垮整批（冷却后重跑补齐）
+            consecutive_fail += 1
+            if consecutive_fail >= max_consecutive_failures:
+                aborted = True  # 疑似触发限流：保住已抓部分，冷却后重跑补缺口
         else:
             seeds.append(ConceptSeed(source=ThemeSource.SEED_EM, seed_code=code, name=name, member_codes=members))
-        if i < len(boards) - 1:
+            consecutive_fail = 0
+        if progress_cb is not None:
+            progress_cb(boards, done, len(boards), seeds, failed)
+        if aborted:
+            break
+        if done < len(boards):
             time.sleep(sleep)
-    return boards, seeds, failed
+    return boards, seeds, failed, aborted
 
 
 def fetch_sw_l2_seeds(session: OrmSession) -> list[ConceptSeed]:
