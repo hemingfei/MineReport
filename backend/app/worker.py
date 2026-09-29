@@ -348,14 +348,16 @@ HANDLERS["import_targets"] = TaskSpec(handle_import_targets, TaskStatus.RUNNING)
 # ---------- import_themes：题材种子导入（#17） ----------
 
 def handle_import_themes(task_id: int) -> None:
-    """东财概念（akshare，滤行情噪音）+ 申万二级（静态码表 + 主数据快照）→ 幂等 upsert。
+    """东财概念（仓库内置快照）+ 申万二级（静态码表 + 主数据快照）→ 幂等 upsert。
 
-    依赖标的主数据已导入（成员 FK 指向 targets）；主数据未导时种子题材照建、成分为空，
-    主数据导入后重跑即可补齐。
+    均零网络：东财 push2 对高频请求按 IP 断连，部署机在线抓取不可靠——快照由
+    本地脚本 scripts/refresh_em_concept_snapshot.py 产出、提交后随版本发布。
+    依赖标的主数据已导入（成员 FK 指向 targets）；主数据未导时种子题材照建、
+    成分为空，主数据导入后重跑即可补齐。
     """
     with db.session_scope() as session:
         task = session.get(Task, task_id)
-        em_seeds = themes.fetch_em_concept_seeds()
+        em_seeds = themes.load_em_concept_seeds()
         sw_seeds = themes.fetch_sw_l2_seeds(session)
         stats = themes.import_theme_seeds(session, em_seeds + sw_seeds)
         task.status = TaskStatus.DONE

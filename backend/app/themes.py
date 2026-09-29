@@ -8,20 +8,24 @@
   "算力"不各立门户。
 - 分析回填标的池：题材关联落库时，本分析瀑布已落成的标的作为
   ThemeMembership(source=analysis) 入池（spec 数据模型的三来源之一）。
-- 种子：东财概念（滤行情类噪音）+ 申万二级骨架一键导入（幂等），成分股直接作为
-  ThemeMembership(source=seed) 入库；重导入时移出的成分退池（is_active=False），
+- 种子：东财概念（内置快照，滤行情类噪音）+ 申万二级骨架一键导入（幂等），成分股
+  直接作为 ThemeMembership(source=seed) 入库；重导入时移出的成分退池（is_active=False），
   分析/人工来源的成员不受种子同步影响；已合并/停用的种子不复活。
 
-网络函数（fetch_em_concept_seeds）与纯导入函数（import_theme_seeds）分离：
-测试只喂行数据，不碰网络（与 masterdata.py 同一模式）。
+东财概念导入只读仓库内置快照（app/data/em_concept_snapshot.json，零网络——push2
+对高频请求按 IP 断连，部署机在线抓取不可靠）；联网抓取降级为本地刷新脚本
+scripts/refresh_em_concept_snapshot.py，产出提交进仓库随版本发布。纯导入函数
+（import_theme_seeds）与网络函数分离：测试只喂行数据，不碰网络。
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 import unicodedata
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
@@ -456,7 +460,73 @@ def is_noise_concept(name: str) -> bool:
     return n in _NOISE_EXACT or any(p in n for p in _NOISE_SUBSTRINGS)
 
 
-# ---------- 网络抓取（生产路径；测试不调用） ----------
+# ---------- 东财概念快照（仓库内置；导入零网络，刷新走 scripts/） ----------
+
+EM_SNAPSHOT_JSON = Path(__file__).resolve().parent / "data" / "em_concept_snapshot.json"
+
+
+def load_em_concept_seeds(path: Path | None = None) -> list[ConceptSeed]:
+    """东财概念种子 = 仓库内置快照（scripts/refresh_em_concept_snapshot.py 产出）。
+
+    部署机不直连东财：push2 对高频请求按 IP 断连（实测连 curl 都被掐，冷却分钟级
+    以上），在线抓取在数据中心 IP 上不可靠。噪音板块在加载时滤（is_noise_concept
+    演化无需重抓快照），成分代码只收 6 位合规码。
+    """
+    p = path or EM_SNAPSHOT_JSON
+    if not p.exists():
+        raise MasterDataError(
+            "snapshot_missing",
+            f"东财概念快照缺失（{p.name}）：backend/ 下跑 scripts/refresh_em_concept_snapshot.py 生成后提交",
+        )
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise MasterDataError("snapshot_corrupt", f"东财概念快照解析失败：{e}") from e
+    seeds: list[ConceptSeed] = []
+    for row in raw.get("concepts", []):
+        name = str(row.get("name", "")).strip()
+        if not name or is_noise_concept(name):
+            continue
+        members = [str(c) for c in row.get("members", []) if valid_code(str(c))]
+        seeds.append(ConceptSeed(
+            source=ThemeSource.SEED_EM,
+            seed_code=str(row.get("code", "")),
+            name=name,
+            member_codes=members,
+        ))
+    return seeds
+
+
+def merge_em_snapshot(
+    existing: dict | None,
+    boards: list[tuple[str, str]],
+    fetched: list[ConceptSeed],
+    failed: list[str],
+    today: dt.date | None = None,
+) -> dict:
+    """刷新脚本用纯函数：本次抓取与既有快照合并（部分失败不丢已有数据）。
+
+    板块集以本次列表为准（官方撤销的板块随之移除）；本次成功的板块用新成分，
+    失败的板块沿用既有成分并标 stale（重跑可补齐）；新板块本次失败则缺席。
+    """
+    by_code = {s.seed_code: s for s in fetched}
+    prev = {c.get("code"): c for c in (existing or {}).get("concepts", [])}
+    concepts: list[dict] = []
+    for name, code in boards:
+        s = by_code.get(code)
+        if s is not None:
+            concepts.append({"code": code, "name": name, "members": s.member_codes})
+        elif code in prev:
+            concepts.append({**prev[code], "name": name, "stale": True})
+    return {
+        "generated_at": (today or dt.date.today()).isoformat(),
+        "source": "eastmoney push2 clist m:90 t:3（经 akshare，快照说明见 data/README.md）",
+        "failed_boards": sorted(failed),
+        "concepts": concepts,
+    }
+
+
+# ---------- 网络抓取（仅刷新脚本调用；测试不调用） ----------
 
 
 def _retry_fetch(desc: str, fn, retries: int = 3, wait: float = 2.0):
@@ -469,11 +539,15 @@ def _retry_fetch(desc: str, fn, retries: int = 3, wait: float = 2.0):
             time.sleep(wait)
 
 
-def fetch_em_concept_seeds(sleep: float = 0.35) -> list[ConceptSeed]:
-    """东财概念板块 + 逐板块成分股（akshare，~460 板块滤噪音后 ~400）。
+def fetch_em_concept_seeds(
+    sleep: float = 1.0,
+) -> tuple[list[tuple[str, str]], list[ConceptSeed], list[str]]:
+    """东财概念板块列表 + 逐板块成分股（akshare）→ (板块全集, 成功种子, 失败板块名)。
 
-    全局限速由 sleep 参数承担（与连接器 1 req/s 约束同向，种子导入低频可稍快）。
-    成分代码只收 6 位合规码；不在 targets 主数据的代码由导入侧跳过。
+    板块全集不过滤（噪音在 load_em_concept_seeds 加载时滤，规则演化不用重抓）；
+    单板块失败重试后跳过不拖垮整批（与 merge_em_snapshot 配合，缺口重跑补齐）。
+    push2 按请求频率掐连接（按 IP，冷却分钟级以上），sleep 默认 1s（~400 板块
+    全程约 10 分钟），仍大面积失败就等冷却后重跑。
     """
     import akshare as ak
 
@@ -482,21 +556,26 @@ def fetch_em_concept_seeds(sleep: float = 0.35) -> list[ConceptSeed]:
         return [
             (str(name), str(code))
             for name, code in zip(df["板块名称"], df["板块代码"])
-            if str(name).strip() and not is_noise_concept(str(name))
+            if str(name).strip()
         ]
 
-    boards = _retry_fetch("akshare stock_board_concept_name_em（东财概念列表）", _boards)
+    boards = _retry_fetch("akshare stock_board_concept_name_em（东财概念列表）", _boards, wait=5.0)
     seeds: list[ConceptSeed] = []
+    failed: list[str] = []
     for i, (name, code) in enumerate(boards):
         def _cons(name=name) -> list[str]:
             df = ak.stock_board_concept_cons_em(symbol=name)
             return [str(c) for c in df["代码"] if valid_code(str(c))]
 
-        members = _retry_fetch(f"东财概念「{name}」成分股", _cons)
-        seeds.append(ConceptSeed(source=ThemeSource.SEED_EM, seed_code=code, name=name, member_codes=members))
+        try:
+            members = _retry_fetch(f"东财概念「{name}」成分股", _cons, wait=5.0)
+        except MasterDataError:
+            failed.append(name)  # 单板块失败不拖垮整批（冷却后重跑补齐）
+        else:
+            seeds.append(ConceptSeed(source=ThemeSource.SEED_EM, seed_code=code, name=name, member_codes=members))
         if i < len(boards) - 1:
             time.sleep(sleep)
-    return seeds
+    return boards, seeds, failed
 
 
 def fetch_sw_l2_seeds(session: OrmSession) -> list[ConceptSeed]:

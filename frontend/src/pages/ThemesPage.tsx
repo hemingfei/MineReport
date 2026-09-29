@@ -335,8 +335,9 @@ export function ThemesPage() {
       </div>
       {isAdmin && (
         <p className="hint">
-          种子 = 东财概念（滤行情类噪音）+ 申万二级骨架，成分股直接入标的池（幂等，可重复执行；
-          需先导入标的主数据）。
+          种子 = 东财概念（内置快照，滤行情类噪音）+ 申万二级骨架，成分股直接入标的池
+          （幂等，可重复执行；需先导入标的主数据）。快照零网络、随版本发布；更新数据在
+          backend/ 下重跑 scripts/refresh_em_concept_snapshot.py 并提交发版。
           {importTask?.status === "done" && importTask.result && "themes_created" in importTask.result
             ? ` 上次新建 ${String(importTask.result.themes_created)} 个题材。`
             : ""}

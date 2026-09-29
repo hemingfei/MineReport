@@ -13,6 +13,7 @@ import json
 import pytest
 from sqlalchemy import select
 
+from app.errors import MasterDataError
 from app.models import (
     Analysis,
     AnalysisAuthor,
@@ -32,6 +33,8 @@ from app.themes import (
     expand_query_terms,
     import_theme_seeds,
     is_noise_concept,
+    load_em_concept_seeds,
+    merge_em_snapshot,
     normalize_theme_name,
 )
 
@@ -700,6 +703,60 @@ def test_author_search_includes_reports_without_theme_links(api, login, make_use
     assert body["themes"] == [] and body["targets"] == []
 
 
+# ---------- 东财概念快照：加载与合并 ----------
+
+
+def _snapshot_row(code: str, name: str, members: list[str]) -> dict:
+    return {"code": code, "name": name, "members": members}
+
+
+def test_load_em_concept_seeds_filters_noise_and_codes(tmp_path) -> None:
+    p = tmp_path / "em_concept_snapshot.json"
+    p.write_text(json.dumps({"concepts": [
+        _snapshot_row("BK0800", "AI算力", ["600519", "6005X"]),  # 脏码（非 6 位数字）滤掉
+        _snapshot_row("BK0001", "ST板块", ["600519"]),  # 噪音（精确）
+        _snapshot_row("BK0002", "昨日涨停", ["600519"]),  # 噪音（子串）
+        _snapshot_row("BK0003", "  ", ["600519"]),  # 空名跳过
+    ]}), encoding="utf-8")
+
+    seeds = load_em_concept_seeds(p)
+
+    assert [(s.seed_code, s.name, s.member_codes) for s in seeds] == [("BK0800", "AI算力", ["600519"])]
+    assert all(s.source == ThemeSource.SEED_EM for s in seeds)
+
+
+def test_load_em_concept_seeds_missing_or_corrupt(tmp_path) -> None:
+    with pytest.raises(MasterDataError) as missing:
+        load_em_concept_seeds(tmp_path / "absent.json")
+    assert missing.value.error_code == "snapshot_missing"
+
+    p = tmp_path / "bad.json"
+    p.write_text("{not json", encoding="utf-8")
+    with pytest.raises(MasterDataError) as corrupt:
+        load_em_concept_seeds(p)
+    assert corrupt.value.error_code == "snapshot_corrupt"
+
+
+def test_merge_em_snapshot_keeps_failed_boards() -> None:
+    existing = {"concepts": [
+        _snapshot_row("BK0001", "旧名", ["600519"]),
+        _snapshot_row("BK0003", "旧板块", ["000001", "600519"]),
+    ]}
+    boards = [("新名", "BK0001"), ("新板块", "BK0002"), ("旧板块", "BK0003")]
+    fetched = [_seed(ThemeSource.SEED_EM, "BK0001", "新名", ["600519", "000858"])]
+    today = dt.date(2026, 9, 29)
+
+    payload = merge_em_snapshot(existing, boards, fetched, failed=["旧板块"], today=today)
+
+    assert payload["generated_at"] == "2026-09-29"
+    assert payload["failed_boards"] == ["旧板块"]
+    # 成功板块用新成分；失败且既有 → 沿用成分标 stale 并跟随改名；新板块失败 → 缺席
+    assert payload["concepts"] == [
+        {"code": "BK0001", "name": "新名", "members": ["600519", "000858"]},
+        {"code": "BK0003", "name": "旧板块", "members": ["000001", "600519"], "stale": True},
+    ]
+
+
 # ---------- worker：import_themes 任务 ----------
 
 
@@ -717,8 +774,8 @@ def test_worker_import_themes_task(api, login, make_user, db_session, monkeypatc
     from app import worker
 
     monkeypatch.setattr(
-        themes_mod, "fetch_em_concept_seeds",
-        lambda sleep=0.35: [_seed(ThemeSource.SEED_EM, "BK0800", "AI算力", [t.code])],
+        themes_mod, "load_em_concept_seeds",
+        lambda path=None: [_seed(ThemeSource.SEED_EM, "BK0800", "AI算力", [t.code])],
     )
     monkeypatch.setattr(
         themes_mod, "fetch_sw_l2_seeds",
