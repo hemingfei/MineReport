@@ -5,13 +5,19 @@
 
 ## em_concept_snapshot.json
 
-东财概念板块全集 + 各板块成分股快照，题材种子导入的东财半边数据源。
+题材种子导入的东财半边数据源：概念板块全集 + 各板块成分股快照。
 `worker` 的 `import_themes` 任务只读本文件、零网络——东财 push2 接口对高频请求
 按 IP 直接断连（实测连 curl 都被掐、冷却分钟级以上），部署机（数据中心 IP）在线
 抓取不可靠。噪音板块（行情/风格/资金面类，见 `themes._NOISE_*`）在导入加载时滤，
 规则演化无需重抓快照。
 
-刷新：backend/ 下 `uv run python scripts/refresh_em_concept_snapshot.py`
+**当前来源（2026-10-01）**：新浪财经概念板块（vip.stock.finance.sina.com.cn
+getHQNodeData，175 节点、成分翻页到空页自校验）——东财 push2 把家宽/数据中心 IP
+全部拉黑且封禁长效，境外 IP 一律 502 地域拒，首份快照改由新浪替代产出（文件名与
+格式不变，`code` 字段为新浪 gn_* 节点 id，加载与噪音过滤逻辑不受来源影响）。
+东财风控解除后重跑下方刷新脚本即会整体覆盖回东财口径（板块集以本次列表为准）。
+
+刷新（东财口径）：backend/ 下 `uv run python scripts/refresh_em_concept_snapshot.py`
 （~400 板块 × ~1.4s 全程约 10 分钟），与既有快照合并——板块集以本次列表为准，
 失败的板块沿用上次成分并标 stale，限流冷却后重跑即可补齐。产出提交进仓库，
 随版本发布到服务器。
