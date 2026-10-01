@@ -1,0 +1,31 @@
+# 一次性：本地出口 IP 被东财 push2 风控拉黑（IPv4/IPv6 双族均断），
+# 借 GitHub runner 的全新出口 IP 跑快照抓取，构件带回落仓库。
+# 用完即删，不入常规 CI。
+name: fetch-em-snapshot (one-off)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: 安装依赖
+        working-directory: backend
+        run: uv sync --frozen
+      - name: 抓取快照（IPv4 慢爬）
+        working-directory: backend
+        run: uv run python scripts/refresh_em_concept_snapshot.py --inet 4 --sleep 1.2
+      - name: 上传快照（失败也收部分结果）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: em_concept_snapshot
+          path: backend/app/data/em_concept_snapshot.json
+          if-no-files-found: warn
