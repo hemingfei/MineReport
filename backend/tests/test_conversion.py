@@ -1,4 +1,4 @@
-"""conversion 纯函数层测试：标题归一、清洗正则、加密/扫描闸门、markitdown 转换。
+"""conversion 纯函数层测试：标题归一、清洗正则、加密/扫描闸门、pymupdf4llm 转换。
 
 夹具用 research/markitdown-samples/ 的真实 PDF（spec Testing Decisions 指定的测试资产）。
 """
@@ -57,7 +57,6 @@ def test_clean_markdown_strips_noise_lines() -> None:
             "资料来源：Wind，东吴证券研究所",  # 孤儿来源行
             "图1：全球算力市场规模（亿美元）",  # 孤儿图注
             "2024年12月31日",  # 页眉日期行
-            "| --- | --- |",  # 纯分隔行
             "12.5",  # 孤立数字
             "30%",  # 孤立百分比
             "安洁科技是全球消费电子精密件龙头。",
@@ -65,8 +64,36 @@ def test_clean_markdown_strips_noise_lines() -> None:
     )
     cleaned = conversion.clean_markdown(md)
     assert "安洁科技是全球消费电子精密件龙头。" in cleaned
-    for noise in ["免责条款", "资料来源", "- 3 -", "图1", "| --- |", "12.5", "30%"]:
+    for noise in ["免责条款", "资料来源", "- 3 -", "图1", "12.5", "30%"]:
         assert noise not in cleaned, noise
+
+
+def test_clean_markdown_keeps_gfm_table_separator() -> None:
+    """`|---|` 分隔行必须保留（GFM 渲染成表格的必要条件，ADR-0002 教训）。"""
+    md = "|盈利预测与估值|2024E|\n|---|---|\n|营业总收入|4199|"
+    assert conversion.clean_markdown(md) == md
+
+
+def test_clean_markdown_strips_picture_text_block() -> None:
+    """pymupdf4llm 的图表文字残渣（坐标轴刻度，HTML 注释对包裹）整块剥除。"""
+    md = (
+        "正文段落。\n"
+        "<!-- Start of picture text -->\n"
+        "安洁科技 沪深300<br>23%<br>-31%<br>2024/1/2\n"
+        "<!-- End of picture text -->\n"
+        "后续段落。"
+    )
+    cleaned = conversion.clean_markdown(md)
+    assert "沪深300" not in cleaned and "23%" not in cleaned
+    assert "正文段落。" in cleaned and "后续段落。" in cleaned
+
+
+def test_clean_markdown_strips_template_fields_and_mark() -> None:
+    """Word 模板隐藏域 [Table_*] 与 pymupdf4llm 的 <mark> 高亮标记剥除，正文保留。"""
+    md = "评级 [Table_Rating] <mark>安洁科技（002635）</mark> 盈利预测 [Table_EPS] 稳步提升。"
+    cleaned = conversion.clean_markdown(md)
+    assert "[Table_" not in cleaned and "<mark>" not in cleaned
+    assert "安洁科技（002635）" in cleaned and "盈利预测" in cleaned and "稳步提升。" in cleaned
 
 
 def test_clean_markdown_keeps_real_numbers_in_context() -> None:
@@ -154,11 +181,11 @@ def test_preflight_scanned_gate_threshold(monkeypatch) -> None:
     assert e.value.error_code == "scanned"
 
 
-# ---------- markitdown 转换 ----------
+# ---------- 引擎转换 ----------
 
 @pytest.mark.skipif(not _has_samples(), reason="research/markitdown-samples 本地资产不在仓库，相关测试跳过")
 def test_convert_to_markdown_matches_reference() -> None:
-    """markitdown 输出与 #2 研究的参考 md 逐字节一致（同版本确定性）。"""
+    """pymupdf4llm 输出与参考 md 逐字节一致（同版本确定性；参考件由锁定版本引擎生成）。"""
     from pathlib import Path
 
     ref = (
@@ -166,12 +193,24 @@ def test_convert_to_markdown_matches_reference() -> None:
         / "research"
         / "markitdown-samples"
         / "md"
-        / "dongwu-002635-anjie-20241231.md"
+        / "dongwu-002635-anjie-20241231.pymupdf.md"
     ).read_text(encoding="utf-8")
     out = conversion.convert_to_markdown(
         _pdf("dongwu-002635-anjie-20241231.pdf"), "dongwu-002635-anjie-20241231.pdf"
     )
     assert out == ref
+
+
+@pytest.mark.skipif(not _has_samples(), reason="research/markitdown-samples 本地资产不在仓库，相关测试跳过")
+def test_cleaned_markdown_renders_valuation_table() -> None:
+    """端到端质量闸门（ADR-0002）：东吴首页盈利预测表清洗后仍保留表头与分隔行。"""
+    out = conversion.convert_to_markdown(
+        _pdf("dongwu-002635-anjie-20241231.pdf"), "dongwu-002635-anjie-20241231.pdf"
+    )
+    cleaned = conversion.clean_markdown(out)
+    assert "|盈利预测与估值|" in cleaned
+    assert "|---|" in cleaned.replace(" ", "")
+    assert "[Table_" not in cleaned
 
 
 def test_convert_to_markdown_encrypted_input_passes_through_preflight() -> None:

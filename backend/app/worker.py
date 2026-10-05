@@ -1,7 +1,7 @@
 """worker：轮询共享任务表，按 kind 分派处理器。
 
 转换（#13）分三阶段执行，每阶段完成即把 stages_done 落库：
-  preflight（加密检测/解密重写 + 扫描闸门）→ convert（markitdown + 字符数闸门）
+  preflight（加密检测/解密重写 + 扫描闸门）→ convert（引擎出正文 + 字符数闸门）
   → persist（清洗 + 写回 report_files）
 失败任务可由 API 重置回 uploaded 重跑，已完成的阶段经 stages_done/产物探测跳过（分阶段重试）。
 
@@ -159,7 +159,9 @@ def _decrypted_key(storage_key: str) -> str:
 
 
 def _raw_markdown_key(storage_key: str) -> str:
-    return f"{storage_key}.raw.md"
+    # key 带引擎代号（ADR-0002 换代）：旧 markitdown 产物（.raw.md）自然废弃，
+    # 已完成任务重试不会命中旧引擎输出
+    return f"{storage_key}.pymupdf.raw.md"
 
 
 def _save_stage(task: Task, stages: set[str]) -> None:
@@ -189,7 +191,7 @@ def handle_convert(task_id: int) -> None:
                 _save_stage(task, stages)
                 session.commit()
 
-            # 阶段 convert：markitdown + 输出字符数闸门（markitdown 静默空串防护）
+            # 阶段 convert：引擎出正文 + 输出字符数闸门（引擎静默空串防护）
             raw_key = _raw_markdown_key(file.storage_key)
             if ConvertStage.CONVERT not in stages or not storage.exists(raw_key):
                 decrypted = _decrypted_key(file.storage_key)

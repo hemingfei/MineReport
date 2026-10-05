@@ -11,7 +11,10 @@ dependencies = [
     "alembic>=1.13",
     "pydantic-settings>=2.0",
     "httpx>=0.27",
-    "markitdown[docx,pdf]>=0.1.8",
+    # PDF 转换走 pymupdf4llm（ADR-0002）；PyMuPDF 为 AGPL-3.0，内部自用无碍
+    "pymupdf4llm>=0.0.27",
+    # markitdown 仅保留 docx 一路（mammoth）；pdf extra 的 pdfminer 系已弃用
+    "markitdown[docx]>=0.1.8",
     "pypdf>=6.19.0",
     "onnxruntime>=1.30",
     "python-multipart>=0.0.32",

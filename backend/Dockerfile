@@ -11,9 +11,10 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 
-# 入口脚本区分 api / worker
+# 入口脚本区分 api / worker；运维脚本（回填/重转）随镜像带上，服务器可直接 exec
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+COPY scripts/*.py ./scripts/
 
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]

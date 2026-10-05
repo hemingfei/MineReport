@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     upload_max_mb: int = 50  # 上传文件大小上限
     allow_reader_download: bool = False  # 读者原始文件下载（默认拒，可放开）
     report_soft_delete_days: int = 30  # 软删除恢复窗口（天）
-    scan_min_chars_per_page: int = 30  # 每页平均字符数低于此值判为扫描版（markitdown 静默空串防护）
+    scan_min_chars_per_page: int = 30  # 每页平均字符数低于此值判为扫描版（引擎静默空串防护）
     markdown_min_chars: int = 200  # 转换输出字符数闸门（清洗前口径）
 
     # LLM 分析管道（#15）。凭据仅环境变量（LLM_BASE_URL / LLM_API_KEY / LLM_MODEL），源码无字面量

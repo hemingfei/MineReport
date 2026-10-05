@@ -99,7 +99,7 @@ def test_conversion_done_and_markdown_readable(api: TestClient, make_user, login
     assert md.status_code == 200
     assert md.headers["content-type"].startswith("text/markdown")
     expected = clean_markdown(
-        (SAMPLES_DIR / "md" / "dongwu-002635-anjie-20241231.md").read_text(encoding="utf-8")
+        (SAMPLES_DIR / "md" / "dongwu-002635-anjie-20241231.pymupdf.md").read_text(encoding="utf-8")
     )
     assert md.text == expected
     assert "免责条款" not in md.text  # 清洗生效
