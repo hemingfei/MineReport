@@ -25,7 +25,8 @@ def ensure_bootstrap_admin() -> bool:
         return False
 
     with db.session_scope() as session:
-        if session.scalars(select(User.id).where(User.role == Role.ADMIN)).one_or_none() is not None:
+        # 多个 admin 是合法状态（管理员可再邀管理员），存在任一即跳过
+        if session.scalars(select(User.id).where(User.role == Role.ADMIN)).first() is not None:
             return False
         session.add(
             User(
