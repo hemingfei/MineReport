@@ -98,18 +98,18 @@ function TargetsPanel({ reportId }: { reportId: number }) {
           <tbody>
             {items.map((t) => (
               <tr key={t.seq} className={t.target_code ? undefined : "row-muted"}>
-                <td>{t.target_name ?? t.raw_name}</td>
-                <td className="mono">
+                <td data-label="标的">{t.target_name ?? t.raw_name}</td>
+                <td className="mono" data-label="代码">
                   {t.target_code ?? (t.raw_code ? `${t.raw_code}?` : "—")}
                 </td>
-                <td>{t.sw_l1_name ?? "—"}</td>
-                <td>
+                <td data-label="申万一级">{t.sw_l1_name ?? "—"}</td>
+                <td data-label="观点">
                   <span className={`chip ${t.stance === "推荐" ? "chip-ok" : "chip-muted"}`}>
                     {STANCE_LABEL[t.stance] ?? t.stance}
                   </span>
                   {t.view && <span className="hint"> {t.view}</span>}
                 </td>
-                <td>
+                <td data-label="代码来源">
                   {t.code_source ? (
                     <span className={`chip ${t.code_source === "inferred" ? "chip-warn" : "chip-muted"}`}>
                       {CODE_SOURCE_LABEL[t.code_source] ?? t.code_source}

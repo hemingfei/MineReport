@@ -1,12 +1,18 @@
 import { Link } from "react-router-dom";
+import { Compass } from "@phosphor-icons/react";
+import { EmptyState } from "../components/EmptyState";
 
 export function NotFoundPage() {
   return (
-    <div className="empty-state">
-      <h2>页面不存在</h2>
-      <p>
-        <Link to="/">返回研报库</Link>
-      </p>
-    </div>
+    <EmptyState
+      icon={<Compass />}
+      title="页面不存在"
+      hint="地址可能输错了，或页面已被移动。"
+      action={
+        <Link className="btn btn-ghost" to="/">
+          返回研报库
+        </Link>
+      }
+    />
   );
 }

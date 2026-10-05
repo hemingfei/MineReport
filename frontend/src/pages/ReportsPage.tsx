@@ -4,6 +4,7 @@ import { api, humanizeError, type ReportList } from "../api";
 import { ROLE_RANK, type Role } from "../api";
 import { formatDate } from "../format";
 import { useAuth } from "../auth";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 const PAGE_SIZE = 20;
 
@@ -109,7 +110,7 @@ export function ReportsPage() {
 
       {error && <p className="form-error">{error}</p>}
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={6} />
       ) : (
         <div className="card table-card">
           <table className="data-table">
@@ -125,7 +126,7 @@ export function ReportsPage() {
               {!data || data.items.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="empty-cell">
-                    没有符合条件的研报
+                    没有符合条件的研报，试试放宽筛选条件
                   </td>
                 </tr>
               ) : (
@@ -136,10 +137,16 @@ export function ReportsPage() {
                     onClick={() => navigate(`/reports/${r.id}`)}
                     title="点击查看详情"
                   >
-                    <td className="cell-nowrap">{formatDate(r.publish_date)}</td>
-                    <td>{r.title}</td>
-                    <td className="cell-nowrap">{r.broker}</td>
-                    <td className="cell-nowrap">{r.files.length}</td>
+                    <td className="cell-nowrap" data-label="发布日期">
+                      {formatDate(r.publish_date)}
+                    </td>
+                    <td data-label="标题">{r.title}</td>
+                    <td className="cell-nowrap" data-label="券商">
+                      {r.broker}
+                    </td>
+                    <td className="cell-nowrap" data-label="文件">
+                      {r.files.length}
+                    </td>
                   </tr>
                 ))
               )}

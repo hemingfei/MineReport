@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../auth";
 import { formatDate, formatDateTime } from "../format";
 import { taskStatusLabel, useTaskPolling, useTaskTerminal } from "../task";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 const REPORT_PAGE_SIZE = 20;
 
@@ -73,7 +74,7 @@ export function ThemeDetailPage() {
     return <p className="form-error">无效的题材 id</p>;
   }
   if (error) return <p className="form-error">{error}</p>;
-  if (!theme || !reports || !members) return <div className="page-loading">加载中…</div>;
+  if (!theme || !reports || !members) return <ListSkeleton rows={5} />;
 
   const canGenerate = user != null && ROLE_RANK[user.role] >= ROLE_RANK.analyst;
 
@@ -172,9 +173,13 @@ export function ThemeDetailPage() {
                   onClick={() => navigate(`/reports/${r.id}`)}
                   title="点击查看详情"
                 >
-                  <td className="cell-nowrap">{formatDate(r.publish_date)}</td>
-                  <td>{r.title}</td>
-                  <td className="cell-nowrap">{r.broker}</td>
+                  <td className="cell-nowrap" data-label="发布日期">
+                    {formatDate(r.publish_date)}
+                  </td>
+                  <td data-label="标题">{r.title}</td>
+                  <td className="cell-nowrap" data-label="券商">
+                    {r.broker}
+                  </td>
                 </tr>
               ))
             )}
@@ -210,7 +215,7 @@ export function ThemeDetailPage() {
         {activeOnly ? " 活跃" : ""}）
       </h2>
       <p className="hint">
-        <label className="field">
+        <label className="check-field">
           <input
             type="checkbox"
             checked={!activeOnly}
@@ -242,15 +247,23 @@ export function ThemeDetailPage() {
             ) : (
               members.items.map((m) => (
                 <tr key={m.code}>
-                  <td className="mono cell-nowrap">{m.code}</td>
-                  <td>{m.name}</td>
-                  <td className="cell-nowrap">{m.exchange}</td>
-                  <td className="cell-nowrap">{m.sw_l1_name ?? "—"}</td>
-                  <td className="cell-nowrap">
+                  <td className="mono cell-nowrap" data-label="代码">
+                    {m.code}
+                  </td>
+                  <td data-label="名称">{m.name}</td>
+                  <td className="cell-nowrap" data-label="交易所">
+                    {m.exchange}
+                  </td>
+                  <td className="cell-nowrap" data-label="申万一级行业">
+                    {m.sw_l1_name ?? "—"}
+                  </td>
+                  <td className="cell-nowrap" data-label="来源">
                     {m.source === "seed" ? "种子" : m.source === "analysis" ? "分析" : "人工"}
                   </td>
-                  <td className="cell-nowrap">{formatDate(m.joined_at)}</td>
-                  <td className="cell-nowrap">
+                  <td className="cell-nowrap" data-label="加入日期">
+                    {formatDate(m.joined_at)}
+                  </td>
+                  <td className="cell-nowrap" data-label="状态">
                     {m.is_active ? (
                       <span className="chip chip-ok">在池</span>
                     ) : (

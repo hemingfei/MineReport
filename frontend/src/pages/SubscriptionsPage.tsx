@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import {
   REF_STATUS_LABEL,
   api,
@@ -11,6 +12,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { formatDateTime } from "../format";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 function SubscriptionRow({
   sub,
@@ -35,19 +37,25 @@ function SubscriptionRow({
           : "正常";
   return (
     <tr className={sub.enabled ? undefined : "row-muted"}>
-      <td>
-        <a href={`#/themes/${sub.theme_id}`}>{sub.theme_name}</a>
+      <td data-label="题材">
+        <Link to={`/themes/${sub.theme_id}`}>{sub.theme_name}</Link>
       </td>
-      <td className="mono">{sub.connector_id}</td>
-      <td>每 {sub.interval_hours}h</td>
-      <td>
+      <td className="mono" data-label="连接器">
+        {sub.connector_id}
+      </td>
+      <td data-label="间隔">每 {sub.interval_hours}h</td>
+      <td data-label="自动下载">
         <span className={sub.auto_download ? "chip chip-ok" : "chip chip-muted"}>
           {sub.auto_download ? "自动下载" : "仅元数据"}
         </span>
       </td>
-      <td className="cell-nowrap">{sub.next_run_at ? formatDateTime(sub.next_run_at) : "—"}</td>
-      <td className="cell-nowrap">{sub.last_success_at ? formatDateTime(sub.last_success_at) : "—"}</td>
-      <td>
+      <td className="cell-nowrap" data-label="下轮">
+        {sub.next_run_at ? formatDateTime(sub.next_run_at) : "—"}
+      </td>
+      <td className="cell-nowrap" data-label="上次成功">
+        {sub.last_success_at ? formatDateTime(sub.last_success_at) : "—"}
+      </td>
+      <td data-label="健康">
         <span
           className={
             sub.consecutive_failures > 0 || sub.attempt > 0 ? "chip chip-warn" : "chip chip-ok"
@@ -56,7 +64,7 @@ function SubscriptionRow({
           {health}
         </span>
       </td>
-      <td className="cell-nowrap">
+      <td className="cell-nowrap" data-label="操作">
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -103,7 +111,7 @@ function RefRow({
   const downloadable = refItem.status === "seen" || refItem.status === "fetch_failed";
   return (
     <tr>
-      <td>
+      <td data-label="标题">
         {refItem.report_url ? (
           <a href={refItem.report_url} target="_blank" rel="noreferrer">
             {refItem.title}
@@ -111,23 +119,23 @@ function RefRow({
         ) : (
           refItem.title
         )}
-        {refItem.last_error && (
-          <div className="hint" style={{ color: "#b3261e" }}>
-            {refItem.last_error}
-          </div>
-        )}
+        {refItem.last_error && <div className="hint text-danger">{refItem.last_error}</div>}
       </td>
-      <td>{refItem.broker ?? "—"}</td>
-      <td className="cell-nowrap">{refItem.publish_date}</td>
-      <td className="mono">{refItem.connector_id}</td>
-      <td>
+      <td data-label="券商">{refItem.broker ?? "—"}</td>
+      <td className="cell-nowrap" data-label="发布日期">
+        {refItem.publish_date}
+      </td>
+      <td className="mono" data-label="来源">
+        {refItem.connector_id}
+      </td>
+      <td data-label="状态">
         <span className={refStatusChipClass(refItem.status)}>
           {REF_STATUS_LABEL[refItem.status]}
         </span>
       </td>
-      <td className="cell-nowrap">
+      <td className="cell-nowrap" data-label="操作">
         {refItem.report_id ? (
-          <a href={`#/reports/${refItem.report_id}`}>查看研报</a>
+          <Link to={`/reports/${refItem.report_id}`}>查看研报</Link>
         ) : downloadable ? (
           <button
             type="button"
@@ -308,7 +316,7 @@ export function SubscriptionsPage() {
       {actionError && <p className="form-error">{actionError}</p>}
 
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={4} />
       ) : error ? (
         <p className="form-error">{error}</p>
       ) : (

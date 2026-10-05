@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { Tag } from "@phosphor-icons/react";
 import {
   api,
   humanizeError,
@@ -15,6 +16,8 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { isTaskSettled, taskStatusLabel, useTaskPolling } from "../task";
+import { EmptyState } from "../components/EmptyState";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 const PAGE_SIZE = 50;
 
@@ -346,12 +349,14 @@ export function ThemesPage() {
       )}
       {importError && <p className="form-error">{importError}</p>}
 
-      <div className="pager">
+      <div className="tab-row" role="tablist" aria-label="题材状态">
         {STATUS_TABS.map((t) => (
           <button
             key={t.key}
             type="button"
-            className={t.key === tab ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"}
+            role="tab"
+            aria-selected={t.key === tab}
+            className={t.key === tab ? "tab active" : "tab"}
             onClick={() => {
               setTab(t.key);
               setPage(0);
@@ -409,11 +414,17 @@ export function ThemesPage() {
 
       {error && <p className="form-error">{error}</p>}
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={5} />
       ) : !data || data.items.length === 0 ? (
-        <div className="empty-state">
-          <p>该状态下暂无题材。</p>
-        </div>
+        <EmptyState
+          icon={<Tag />}
+          title="该状态下暂无题材"
+          hint={
+            tab === "active"
+              ? "可先导入题材种子，或由分析师提议新题材。"
+              : "换个状态页签，或先到「在册」看看。"
+          }
+        />
       ) : (
         data.items.map((t) => (
           <ThemeCard

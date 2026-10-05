@@ -31,7 +31,12 @@ export function LoginPage() {
   return (
     <div className="auth-screen">
       <form className="auth-card card" onSubmit={onSubmit}>
-        <h1 className="auth-title">MineReport</h1>
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden>
+            研
+          </span>
+          <h1 className="auth-title">MineReport</h1>
+        </div>
         <p className="auth-subtitle">研报挖掘 · 登录</p>
         <label className="field">
           <span>邮箱</span>

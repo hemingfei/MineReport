@@ -9,6 +9,7 @@ import {
   type ConnectorRunEvent,
 } from "../api";
 import { formatDateTime } from "../format";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 function RunRow({ run }: { run: ConnectorRunItem }) {
   const stats = run.stats ?? {};
@@ -16,16 +17,20 @@ function RunRow({ run }: { run: ConnectorRunItem }) {
   const found = typeof stats.found === "number" ? `，命中 ${stats.found}` : "";
   return (
     <tr>
-      <td className="cell-nowrap">{formatDateTime(run.created_at)}</td>
-      <td className="mono">{run.connector_id}</td>
-      <td>
+      <td className="cell-nowrap" data-label="时间">
+        {formatDateTime(run.created_at)}
+      </td>
+      <td className="mono" data-label="连接器">
+        {run.connector_id}
+      </td>
+      <td data-label="事件">
         <span className={runEventChipClass(run.event)}>
           {RUN_EVENT_LABEL[run.event as ConnectorRunEvent] ?? run.event}
         </span>
       </td>
-      <td>{run.subscription_id != null ? `#${run.subscription_id}` : "—"}</td>
-      <td>{run.ok ? "✓" : "✗"}</td>
-      <td>
+      <td data-label="订阅">{run.subscription_id != null ? `#${run.subscription_id}` : "—"}</td>
+      <td data-label="成败">{run.ok ? "✓" : "✗"}</td>
+      <td data-label="详情">
         {run.message}
         {found}
         {quota}
@@ -95,7 +100,7 @@ export function ConnectorLogPage() {
       </div>
 
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={5} />
       ) : error ? (
         <p className="form-error">{error}</p>
       ) : (

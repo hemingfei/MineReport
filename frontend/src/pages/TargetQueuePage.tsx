@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Crosshair } from "@phosphor-icons/react";
 import { api, humanizeError, type TargetMatchItem, type TargetSummary } from "../api";
 import { useAuth } from "../auth";
 import { formatDateTime } from "../format";
 import { isTaskSettled, taskStatusLabel, useTaskPolling } from "../task";
+import { EmptyState } from "../components/EmptyState";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 const REASON_LABEL: Record<string, string> = {
   inferred_code: "LLM 补码不可信",
@@ -202,7 +205,7 @@ export function TargetQueuePage() {
               ? ` 上次导入 ${String(importTask.result.targets_total)} 只标的。`
               : ""}
           </span>
-          <label className="field">
+          <label className="check-field">
             <input
               type="checkbox"
               checked={withHistory}
@@ -225,13 +228,15 @@ export function TargetQueuePage() {
       {importError && <p className="form-error">{importError}</p>}
 
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={4} />
       ) : error ? (
         <p className="form-error">{error}</p>
       ) : items.length === 0 ? (
-        <div className="empty-state">
-          <p>队列已清空：所有未能自动确认的标的都已处理。</p>
-        </div>
+        <EmptyState
+          icon={<Crosshair />}
+          title="队列已清空"
+          hint="所有未能自动确认的标的都已处理。"
+        />
       ) : (
         items.map((m) => (
           <MatchCard key={m.id} item={m} onResolved={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />

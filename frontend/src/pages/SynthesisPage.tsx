@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../auth";
 import { formatDate, formatDateTime } from "../format";
 import { taskStatusLabel, useTaskPolling, useTaskTerminal } from "../task";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 /** 综合分析结果页（spec 用户故事 17~20）：共性结论/共识标的/分歧点，
  * 结论带原文引用回链（R 序位 → 研报详情）；版本切换 + 手动刷新。 */
@@ -63,7 +64,7 @@ export function SynthesisPage() {
     return <p className="form-error">无效的综合分析 id</p>;
   }
   if (error) return <p className="form-error">{error}</p>;
-  if (!data) return <div className="page-loading">加载中…</div>;
+  if (!data) return <ListSkeleton rows={5} />;
 
   const canRefresh = user != null && ROLE_RANK[user.role] >= ROLE_RANK.analyst;
   const r = data.result;
@@ -149,10 +150,14 @@ export function SynthesisPage() {
             ) : (
               r.consensus_targets.map((t, i) => (
                 <tr key={`${t.name}-${i}`}>
-                  <td className="mono cell-nowrap">{t.code ?? "—"}</td>
-                  <td className="cell-nowrap">{t.name}</td>
-                  <td>{t.view || "—"}</td>
-                  <td>
+                  <td className="mono cell-nowrap" data-label="代码">
+                    {t.code ?? "—"}
+                  </td>
+                  <td className="cell-nowrap" data-label="名称">
+                    {t.name}
+                  </td>
+                  <td data-label="共识观点">{t.view || "—"}</td>
+                  <td data-label="引用">
                     <RefChips refs={t.report_refs} reports={data.reports} />
                   </td>
                 </tr>
@@ -179,12 +184,18 @@ export function SynthesisPage() {
           <tbody>
             {data.reports.map((rep, i) => (
               <tr key={rep.id} className="row-link">
-                <td className="mono cell-nowrap">R{i + 1}</td>
-                <td>
+                <td className="mono cell-nowrap" data-label="编号">
+                  R{i + 1}
+                </td>
+                <td data-label="标题">
                   <Link to={`/reports/${rep.id}`}>{rep.title}</Link>
                 </td>
-                <td className="cell-nowrap">{rep.broker || "—"}</td>
-                <td className="cell-nowrap">{formatDate(rep.publish_date)}</td>
+                <td className="cell-nowrap" data-label="券商">
+                  {rep.broker || "—"}
+                </td>
+                <td className="cell-nowrap" data-label="发布日期">
+                  {formatDate(rep.publish_date)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -205,7 +216,9 @@ function ConclusionList({
   if (items.length === 0) {
     return (
       <div className="card">
-        <p className="empty-state">暂无内容</p>
+        <p className="hint" style={{ margin: 0 }}>
+          暂无内容
+        </p>
       </div>
     );
   }

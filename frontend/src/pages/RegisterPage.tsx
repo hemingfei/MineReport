@@ -39,7 +39,12 @@ export function RegisterPage() {
   return (
     <div className="auth-screen">
       <form className="auth-card card" onSubmit={onSubmit}>
-        <h1 className="auth-title">MineReport</h1>
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden>
+            研
+          </span>
+          <h1 className="auth-title">MineReport</h1>
+        </div>
         <p className="auth-subtitle">凭邀请码注册</p>
         <label className="field">
           <span>邀请码</span>

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { UploadSimple } from "@phosphor-icons/react";
 import { api, humanizeError, type ReportCreated } from "../api";
 import { formatBytes } from "../format";
 import { taskStatusLabel, useTaskPolling } from "../task";
@@ -166,7 +167,10 @@ export function UploadPage() {
               <strong>{file.name}</strong>（{formatBytes(file.size)}）
             </p>
           ) : (
-            <p>把 PDF / DOCX 拖到这里，或点击选择文件</p>
+            <>
+              <UploadSimple aria-hidden />
+              <p>把 PDF / DOCX 拖到这里，或点击选择文件</p>
+            </>
           )}
           <input
             ref={inputRef}

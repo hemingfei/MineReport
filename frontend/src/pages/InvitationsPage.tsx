@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ROLE_LABEL, api, type Invitation, type Role } from "../api";
 import { formatDateTime } from "../format";
 import { humanizeError } from "../api";
+import { ListSkeleton } from "../components/ListSkeleton";
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -31,12 +32,18 @@ function InvitationRow({ invitation }: { invitation: Invitation }) {
       : "可用";
   return (
     <tr className={invitation.used_at ? "row-muted" : undefined}>
-      <td className="mono cell-nowrap">{invitation.token}</td>
-      <td>{ROLE_LABEL[invitation.role]}</td>
-      <td>{invitation.email ?? "任意邮箱"}</td>
-      <td className="cell-nowrap">{formatDateTime(invitation.expires_at)}</td>
-      <td>{status}</td>
-      <td className="cell-nowrap">{formatDateTime(invitation.created_at)}</td>
+      <td className="mono cell-nowrap" data-label="邀请码">
+        {invitation.token}
+      </td>
+      <td data-label="角色">{ROLE_LABEL[invitation.role]}</td>
+      <td data-label="绑定邮箱">{invitation.email ?? "任意邮箱"}</td>
+      <td className="cell-nowrap" data-label="有效期至">
+        {formatDateTime(invitation.expires_at)}
+      </td>
+      <td data-label="状态">{status}</td>
+      <td className="cell-nowrap" data-label="创建时间">
+        {formatDateTime(invitation.created_at)}
+      </td>
     </tr>
   );
 }
@@ -136,7 +143,7 @@ export function InvitationsPage() {
       )}
 
       {loading ? (
-        <div className="page-loading">加载中…</div>
+        <ListSkeleton rows={4} />
       ) : error ? (
         <p className="form-error">{error}</p>
       ) : (

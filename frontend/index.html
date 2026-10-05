@@ -2,8 +2,24 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="MineReport：A股研报挖掘，题材词表、标的方向与跨报告综合分析。" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181c28" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>MineReport · 研报挖掘</title>
+    <script>
+      // 首屏防闪烁：渲染前定好主题（localStorage 优先，否则随系统）
+      (function () {
+        try {
+          var t = localStorage.getItem("mr:theme");
+          var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          root.dataset.theme = dark ? "dark" : "light";
+          root.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

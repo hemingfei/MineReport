@@ -1,8 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, useRouteError } from "react-router-dom";
 import { AuthProvider, RequireRole } from "./auth";
 import { AppLayout } from "./components/AppLayout";
+import { EmptyState } from "./components/EmptyState";
 import {
   ConnectorLogPage,
   InvitationsPage,
@@ -20,9 +21,26 @@ import {
 } from "./pages";
 import "./styles.css";
 
+/** 路由渲染兜底：页面抛错时给出可恢复的界面，而不是框架默认的开发者错误页。 */
+function RouteError() {
+  const error = useRouteError();
+  const message = error instanceof Error ? error.message : String(error ?? "未知错误");
+  return (
+    <EmptyState
+      title="页面出错了"
+      hint={message}
+      action={
+        <a className="btn btn-ghost" href="/">
+          返回研报库
+        </a>
+      }
+    />
+  );
+}
+
 const router = createBrowserRouter([
-  { path: "/login", element: <LoginPage /> },
-  { path: "/register", element: <RegisterPage /> },
+  { path: "/login", element: <LoginPage />, errorElement: <RouteError /> },
+  { path: "/register", element: <RegisterPage />, errorElement: <RouteError /> },
   {
     path: "/",
     element: (
@@ -30,8 +48,9 @@ const router = createBrowserRouter([
         <AppLayout />
       </RequireRole>
     ),
+    errorElement: <RouteError />,
     children: [
-      { index: true, element: <ReportsPage /> },
+      { index: true, element: <ReportsPage />, errorElement: <RouteError /> },
       {
         path: "upload",
         element: (
@@ -39,11 +58,12 @@ const router = createBrowserRouter([
             <UploadPage />
           </RequireRole>
         ),
+        errorElement: <RouteError />,
       },
-      { path: "reports/:id", element: <ReportDetailPage /> },
-      { path: "themes", element: <ThemesPage /> },
-      { path: "themes/:id", element: <ThemeDetailPage /> },
-      { path: "syntheses/:id", element: <SynthesisPage /> },
+      { path: "reports/:id", element: <ReportDetailPage />, errorElement: <RouteError /> },
+      { path: "themes", element: <ThemesPage />, errorElement: <RouteError /> },
+      { path: "themes/:id", element: <ThemeDetailPage />, errorElement: <RouteError /> },
+      { path: "syntheses/:id", element: <SynthesisPage />, errorElement: <RouteError /> },
       {
         path: "targets",
         element: (
@@ -51,6 +71,7 @@ const router = createBrowserRouter([
             <TargetQueuePage />
           </RequireRole>
         ),
+        errorElement: <RouteError />,
       },
       {
         path: "subscriptions",
@@ -59,6 +80,7 @@ const router = createBrowserRouter([
             <SubscriptionsPage />
           </RequireRole>
         ),
+        errorElement: <RouteError />,
       },
       {
         path: "connector-log",
@@ -67,6 +89,7 @@ const router = createBrowserRouter([
             <ConnectorLogPage />
           </RequireRole>
         ),
+        errorElement: <RouteError />,
       },
       {
         path: "invitations",
@@ -75,8 +98,9 @@ const router = createBrowserRouter([
             <InvitationsPage />
           </RequireRole>
         ),
+        errorElement: <RouteError />,
       },
-      { path: "*", element: <NotFoundPage /> },
+      { path: "*", element: <NotFoundPage />, errorElement: <RouteError /> },
     ],
   },
 ]);
