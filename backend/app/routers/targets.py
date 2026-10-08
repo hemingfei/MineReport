@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -53,6 +55,7 @@ class MatchOut(BaseModel):
     reason: str
     status: str
     candidates: list[CandidateOut] = []
+    created_at: dt.datetime
 
 
 class MatchListOut(BaseModel):
@@ -108,6 +111,7 @@ def _match_out(m: TargetMatch, report_title: str) -> MatchOut:
         reason=m.reason,
         status=m.status,
         candidates=[CandidateOut(**c) for c in (m.candidates or [])],
+        created_at=m.created_at,
     )
 
 

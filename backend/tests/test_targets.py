@@ -437,6 +437,7 @@ def test_spike_regression_inferred_code_polls_queue_end_to_end(
     assert item["reason"] == "inferred_code" and item["raw_code"] == "600519"
     assert item["candidates"][0]["code"] == "600519"
     assert item["report_title"]
+    assert item["created_at"]  # 前端入队时间展示依赖此字段
 
     # 研报标的视图：未确认前 target_code 空
     view = api.get(f"/api/reports/{report_id}/targets", cookies=analyst).json()
