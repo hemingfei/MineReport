@@ -61,7 +61,14 @@ export function LoginPage() {
         </label>
         {error && <p className="form-error">{error}</p>}
         <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-          {submitting ? "登录中…" : "登录"}
+          {submitting ? (
+            <>
+              <span className="spinner" aria-hidden />
+              登录中…
+            </>
+          ) : (
+            "登录"
+          )}
         </button>
         <p className="auth-alt">
           收到邀请？<Link to="/register">凭邀请码注册</Link>

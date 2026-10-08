@@ -162,7 +162,7 @@ function CoveragePanel() {
   return (
     <div className="card">
       <h2 className="section-title">分析师覆盖查询</h2>
-      <p className="hint">按署名看其覆盖的题材与标的，追踪观点迁移（署名由 LLM 从研报提取）。</p>
+      <p className="hint measure">按署名看其覆盖的题材与标的，追踪观点迁移（署名由 LLM 从研报提取）。</p>
       <form className="form-row" onSubmit={onSearch}>
         <label className="field">
           <span>分析师姓名</span>
@@ -337,7 +337,7 @@ export function ThemesPage() {
         )}
       </div>
       {isAdmin && (
-        <p className="hint">
+        <p className="hint measure">
           种子 = 东财概念（内置快照，滤行情类噪音）+ 申万二级骨架，成分股直接入标的池
           （幂等，可重复执行；需先导入标的主数据）。快照零网络、随版本发布；更新数据在
           backend/ 下重跑 scripts/refresh_em_concept_snapshot.py 并提交发版。

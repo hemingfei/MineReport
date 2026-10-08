@@ -199,7 +199,7 @@ export function TargetQueuePage() {
 
       {user?.role === "admin" && (
         <div className="card form-row">
-          <span className="hint">
+          <span className="hint measure">
             主数据：akshare 全量代码+名称 + 申万行业快照（幂等，可重复执行）。
             {importTask && importTask.result && "targets_total" in importTask.result
               ? ` 上次导入 ${String(importTask.result.targets_total)} 只标的。`

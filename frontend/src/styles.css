@@ -429,6 +429,11 @@ code,
   margin-bottom: 12px;
 }
 
+/* 抽屉里的关闭按钮不受桌面端 .nav-toggle display:none 约束 */
+.drawer .nav-toggle {
+  display: grid;
+}
+
 .drawer-nav {
   display: flex;
   flex-direction: column;
@@ -537,7 +542,7 @@ section.narrow {
 }
 
 .page-title {
-  font-size: 22px;
+  font-size: 25px;
   font-weight: 650;
   letter-spacing: -0.01em;
   margin: 0 0 16px;
@@ -562,7 +567,7 @@ section.narrow {
 }
 
 .detail-title {
-  font-size: 21px;
+  font-size: 25px;
   font-weight: 650;
   letter-spacing: -0.01em;
   line-height: 1.4;
@@ -581,9 +586,11 @@ section.narrow {
 
 /* ============ 6. 卡片 ============ */
 
+/* 分隔阶梯：容器靠「底色阶差 + 阴影」分区，描边只留给状态信号与控件。
+   border 槽位保留（transparent），task-done/created-invitation 等状态类覆写颜色。 */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-m);
   box-shadow: var(--shadow-1);
   padding: 16px 18px;
@@ -734,6 +741,11 @@ section.narrow {
   flex: 1;
 }
 
+/* 搜索类长输入不做整行拉伸，保持可扫读的输入宽度 */
+.field-grow input {
+  max-width: 560px;
+}
+
 .field-btn {
   flex-direction: row;
   gap: 8px;
@@ -808,6 +820,11 @@ input[type="checkbox"] {
   line-height: 1.7;
 }
 
+/* 长说明段落限宽：CJK 40 字/行左右，超出读感明显下降 */
+.measure {
+  max-width: 620px;
+}
+
 .hint a {
   color: var(--primary);
 }
@@ -867,6 +884,11 @@ input[type="checkbox"] {
 
 .cell-nowrap {
   white-space: nowrap;
+}
+
+/* 数量类小列：右对齐配合 tabular-nums，纵向位数对齐 */
+.cell-num {
+  text-align: right;
 }
 
 .empty-cell {
@@ -939,6 +961,27 @@ input[type="checkbox"] {
 
   .data-table .empty-cell::before {
     content: none;
+  }
+
+  /* 标题优先表（.table-reorder）：移动端把身份列（第 2 列）提为卡片首行 */
+  .table-reorder tr {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .table-reorder td:nth-child(2) {
+    order: -1;
+    padding-top: 10px;
+    font-weight: 550;
+  }
+
+  .table-reorder td:nth-child(2)::before {
+    content: none;
+  }
+
+  .table-reorder td:first-child {
+    padding-top: 5px;
+    font-weight: inherit;
   }
 }
 
@@ -1017,8 +1060,8 @@ input[type="checkbox"] {
   flex-direction: column;
   gap: 9px;
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
   padding: 16px 18px;
 }
 
@@ -1136,7 +1179,7 @@ input[type="checkbox"] {
 
 .auth-title {
   margin: 0;
-  font-size: 21px;
+  font-size: 24px;
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--text);
@@ -1381,8 +1424,10 @@ input[type="checkbox"] {
   align-items: start;
 }
 
+/* 无目录时正文独占整行且居中，避免宽屏右半空置；有目录才启用两列网格 */
 .reader:not(.reader-with-toc) .article {
   max-width: 920px;
+  margin-inline: auto;
 }
 
 .toc {
@@ -1391,8 +1436,8 @@ input[type="checkbox"] {
   max-height: calc(100vh - var(--topbar-h) - 32px);
   overflow-y: auto;
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
   padding: 14px 12px;
   font-size: 13px;
 }
@@ -1445,7 +1490,6 @@ input[type="checkbox"] {
 
 .article {
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius-m);
   box-shadow: var(--shadow-1);
   padding: 36px 44px;
@@ -1480,11 +1524,11 @@ input[type="checkbox"] {
 }
 
 .article h1 {
-  font-size: 1.42em;
+  font-size: 1.55em;
 }
 
 .article h2 {
-  font-size: 1.22em;
+  font-size: 1.28em;
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--border);
 }
@@ -1501,6 +1545,7 @@ input[type="checkbox"] {
   margin: 0.75em 0;
   line-height: 1.9;
   color: var(--text);
+  text-wrap: pretty;
 }
 
 .article ul,
@@ -1648,6 +1693,17 @@ input[type="checkbox"] {
 
   .nav-toggle {
     display: grid;
+  }
+
+  /* 顶栏主题切换按钮加大触控面积（仍受 56px 顶栏高度约束） */
+  .theme-opt {
+    width: 32px;
+    height: 28px;
+  }
+
+  .theme-opt svg {
+    width: 15px;
+    height: 15px;
   }
 
   .topbar-inner {

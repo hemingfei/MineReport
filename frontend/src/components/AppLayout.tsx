@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Crosshair,
@@ -56,6 +56,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement>(null);
+  const navToggleRef = useRef<HTMLButtonElement>(null);
 
   const isAnalyst = !!user && roleAtLeast(user.role, "analyst");
   const isAdmin = !!user && user.role === "admin";
@@ -70,21 +72,42 @@ export function AppLayout() {
     { to: "/invitations", label: "邀请管理", end: false, icon: <EnvelopeSimple />, show: isAdmin },
   ].filter((item) => item.show);
 
-  // 路由变化收起抽屉；打开时锁 body 滚动、Esc 可关
+  // 路由变化收起抽屉
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
 
+  // 打开时锁 body 滚动、焦点圈禁在抽屉内、Esc 可关；关闭后焦点还给触发按钮
   useEffect(() => {
     document.body.classList.toggle("nav-open", drawerOpen);
     if (!drawerOpen) return;
+    drawerRef.current?.querySelector<HTMLElement>(".drawer-nav a")?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawerOpen(false);
+      if (e.key === "Escape") {
+        setDrawerOpen(false);
+        return;
+      }
+      if (e.key !== "Tab" || !drawerRef.current) return;
+      const focusables = Array.from(
+        drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"),
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !drawerRef.current.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.classList.remove("nav-open");
       window.removeEventListener("keydown", onKey);
+      navToggleRef.current?.focus();
     };
   }, [drawerOpen]);
 
@@ -135,6 +158,7 @@ export function AppLayout() {
             <button
               type="button"
               className="nav-toggle"
+              ref={navToggleRef}
               aria-label="打开导航菜单"
               aria-expanded={drawerOpen}
               onClick={() => setDrawerOpen(true)}
@@ -151,7 +175,13 @@ export function AppLayout() {
         aria-label="关闭导航菜单"
         onClick={() => setDrawerOpen(false)}
       />
-      <aside className={`drawer ${drawerOpen ? "open" : ""}`} aria-label="导航菜单" aria-hidden={!drawerOpen}>
+      <aside
+        className={`drawer ${drawerOpen ? "open" : ""}`}
+        ref={drawerRef}
+        aria-label="导航菜单"
+        /* inert：关闭时整个抽屉退出 Tab 序与可访问性树（链接/按钮/主题切换一并处理） */
+        inert={!drawerOpen}
+      >
         <div className="drawer-head">
           <span className="brand">
             <span className="brand-mark" aria-hidden>
@@ -162,7 +192,6 @@ export function AppLayout() {
           <button
             type="button"
             className="nav-toggle"
-            style={{ display: "grid" }}
             aria-label="关闭导航菜单"
             onClick={() => setDrawerOpen(false)}
           >
@@ -171,7 +200,7 @@ export function AppLayout() {
         </div>
         <nav className="drawer-nav" aria-label="主导航">
           {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} tabIndex={drawerOpen ? 0 : -1}>
+            <NavLink key={item.to} to={item.to} end={item.end}>
               {item.icon}
               {item.label}
             </NavLink>

@@ -83,7 +83,14 @@ export function RegisterPage() {
         </label>
         {error && <p className="form-error">{error}</p>}
         <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-          {submitting ? "注册中…" : "注册并登录"}
+          {submitting ? (
+            <>
+              <span className="spinner" aria-hidden />
+              注册中…
+            </>
+          ) : (
+            "注册并登录"
+          )}
         </button>
         <p className="auth-alt">
           已有账号？<Link to="/login">直接登录</Link>

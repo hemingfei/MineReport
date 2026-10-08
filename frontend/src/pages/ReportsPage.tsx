@@ -113,13 +113,13 @@ export function ReportsPage() {
         <ListSkeleton rows={6} />
       ) : (
         <div className="card table-card">
-          <table className="data-table">
+          <table className="data-table table-reorder">
             <thead>
               <tr>
                 <th>发布日期</th>
                 <th>标题</th>
                 <th>券商</th>
-                <th>文件</th>
+                <th className="cell-num">文件数</th>
               </tr>
             </thead>
             <tbody>
@@ -144,7 +144,7 @@ export function ReportsPage() {
                     <td className="cell-nowrap" data-label="券商">
                       {r.broker}
                     </td>
-                    <td className="cell-nowrap" data-label="文件">
+                    <td className="cell-nowrap cell-num" data-label="文件数">
                       {r.files.length}
                     </td>
                   </tr>
